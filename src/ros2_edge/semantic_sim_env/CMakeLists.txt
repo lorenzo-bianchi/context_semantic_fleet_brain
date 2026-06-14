@@ -18,7 +18,7 @@ ament_target_dependencies(simulator_node
   cv_bridge
 )
 
-target_link_libraries(simulator_node PRIVATE raylib ${RAYLIB_LIBRARIES} ${OpenCV_LIBS})
+target_link_libraries(simulator_node PRIVATE ${RAYLIB_LIBRARIES} ${OpenCV_LIBS})
 target_include_directories(simulator_node PRIVATE ${RAYLIB_INCLUDE_DIRS})
 
 install(TARGETS simulator_node DESTINATION lib/${PROJECT_NAME})
