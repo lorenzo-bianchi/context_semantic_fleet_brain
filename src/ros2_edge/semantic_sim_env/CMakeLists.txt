@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.10)
 project(semantic_sim_env)
 
 find_package(ament_cmake REQUIRED)
