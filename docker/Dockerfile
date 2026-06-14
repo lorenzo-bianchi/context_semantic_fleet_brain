@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y \
 
 RUN pip3 install --no-cache-dir torch torchvision fastapi uvicorn pytest
 
-COPY scripts/entrypoint.sh /entrypoint.sh
+COPY docker/scripts/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
