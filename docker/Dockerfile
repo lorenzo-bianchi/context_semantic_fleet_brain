@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
     git \
+    python3-pip \
     libopencv-dev \
     python3-opencv \
     python3-colcon-common-extensions \
