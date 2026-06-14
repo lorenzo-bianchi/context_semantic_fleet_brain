@@ -10,6 +10,8 @@ RUN apt-get update && apt-get install -y \
     libopencv-dev \
     python3-opencv \
     python3-colcon-common-extensions \
+    ros-lyrical-cv-bridge \
+    ros-lyrical-image-transport \
     libasound2-dev \
     libx11-dev \
     libxrandr-dev \
