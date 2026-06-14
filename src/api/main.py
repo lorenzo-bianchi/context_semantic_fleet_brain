@@ -73,8 +73,13 @@ async def dispatch_command(payload: CommandRequest):
     """
     logger.info(f"Received command from {payload.user_id}: {payload.instruction}")
 
-    # Here we will insert the LangGraph/CrewAI processing logic
-    # mock_task_id = llm_agent.process(payload.instruction)
+    try:
+        # Here we will insert the LangGraph/CrewAI processing logic
+        # mock_task_id = llm_agent.process(payload.instruction)
+        pass
+    except Exception as e:
+        logger.error(f"Error processing command from {payload.user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Internal agent processing error.")
 
     return CommandResponse(
         status="accepted",
