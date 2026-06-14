@@ -42,18 +42,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install System Dependencies
+      - name: Build Docker Environment
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libraylib-dev libopencv-dev
+          docker build -t semantic-fleet-brain-env -f docker/Dockerfile .
 
-      - name: Setup ROS2 Lyrical
-        uses: ros-tooling/setup-ros@v0.7
-        with:
-          required-ros-distributions: lyrical
-
-      - name: Build with Colcon
+      - name: Run Colcon Build inside Container
         run: |
-          cd src/ros2_edge
-          source /opt/ros/lyrical/setup.bash
-          echo "Colcon build command ready!"
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -u $(id -u):$(id -g) \
+            semantic-fleet-brain-env \
+            /bin/bash -c "cd /workspace && colcon build --packages-select semantic_sim_env"
