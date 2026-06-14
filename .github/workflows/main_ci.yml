@@ -1,0 +1,54 @@
+name: Semantic Fleet Brain CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  # ==========================================
+  # JOB 1: Cloud Backend (FastAPI & Python)
+  # ==========================================
+  api_tests:
+    name: Test FastAPI Backend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install fastapi uvicorn pytest
+
+      - name: Run Pytest
+        run: |
+          echo "Here we will run: pytest tests/api/"
+
+  # ==========================================
+  # JOB 2: Edge (ROS2 C++ & Python compilation)
+  # ==========================================
+  ros2_build:
+    name: Build ROS2 Workspace
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup ROS2 Lyrical
+        uses: ros-tooling/setup-ros@v0.7
+        with:
+          required-ros-distributions: lyrical
+
+      - name: Build with Colcon
+        run: |
+          cd src/ros2_edge
+          source /opt/ros/lyrical/setup.bash
+          echo "Colcon build command ready!"
