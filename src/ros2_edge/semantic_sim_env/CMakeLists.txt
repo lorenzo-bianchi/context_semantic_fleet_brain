@@ -12,13 +12,14 @@ pkg_check_modules(RAYLIB REQUIRED raylib)
 
 add_executable(simulator_node src/simulator_node.cpp)
 
-ament_target_dependencies(simulator_node
-  rclcpp
-  sensor_msgs
-  cv_bridge
+target_link_libraries(simulator_node PRIVATE
+  rclcpp::rclcpp
+  sensor_msgs::sensor_msgs
+  cv_bridge::cv_bridge
+  ${RAYLIB_LIBRARIES}
+  ${OpenCV_LIBS}
 )
 
-target_link_libraries(simulator_node PRIVATE ${RAYLIB_LIBRARIES} ${OpenCV_LIBS})
 target_include_directories(simulator_node PRIVATE ${RAYLIB_INCLUDE_DIRS})
 
 install(TARGETS simulator_node DESTINATION lib/${PROJECT_NAME})
