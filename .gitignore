@@ -1,0 +1,30 @@
+# ==============================
+# Python Environment and Testing
+# ==============================
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+venv/
+env/
+.env
+
+# ==============================
+# ROS 2 and C++ Compilation
+# ==============================
+build/
+install/
+log/
+*.so
+*.o
+*.a
+
+# ==============================
+# IDE e Operative System
+# ==============================
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
