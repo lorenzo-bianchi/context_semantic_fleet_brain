@@ -1,0 +1,14 @@
+{
+  "name": "Fleet Brain Dev",
+  "dockerComposeFile": "compose.yaml",
+  "service": "robot-dev",
+  "workspaceFolder": "/workspace",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-vscode.cpptools"
+      ]
+    }
+  }
+}

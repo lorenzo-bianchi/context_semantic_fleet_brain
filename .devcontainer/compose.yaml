@@ -1,0 +1,8 @@
+services:
+  robot-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ..:/workspace
+    command: sleep infinity
