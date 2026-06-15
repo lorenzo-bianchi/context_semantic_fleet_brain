@@ -21,10 +21,17 @@ log/
 *.a
 
 # ==============================
-# IDE e Operative System
+# IDE and Operative System
 # ==============================
 .vscode/
 .idea/
 *.swp
 *~
 .DS_Store
+
+# ==============================
+# AI Local Models
+# ==============================
+**/local_models/
+*.safetensors
+*.bin
