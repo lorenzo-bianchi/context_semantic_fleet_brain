@@ -3,6 +3,48 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+
+    network_mode: host
+    ipc: host
+
+    privileged: true
+
+    env_file:
+      - ../.env
+
+    environment:
+      - DISPLAY=${DISPLAY}
+
     volumes:
       - ..:/workspace
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:roecho $DB_PASSWORD
+      - /dev:/dev
+      - ./zsh_history:/home/zero/zsh_history
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
     command: sleep infinity
+
+  postgres:
+    image: postgres:15
+    container_name: fleet_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: fleet_admin
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: fleet_brain
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+volumes:
+  pg_data:

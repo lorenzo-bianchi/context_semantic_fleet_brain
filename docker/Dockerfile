@@ -30,8 +30,6 @@ RUN git clone --depth 1 https://github.com/raysan5/raylib.git /tmp/raylib \
     && make -j$(nproc) && make install && ldconfig \
     && rm -rf /tmp/raylib
 
-RUN pip3 install --no-cache-dir --break-system-packages torch torchvision fastapi uvicorn pytest
-
 COPY docker/scripts/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

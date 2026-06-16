@@ -43,7 +43,7 @@ alias l='ls -CF'
 alias la='ls -A'
 alias ll='ls -alF'
 alias zshrc='nano ~/.zshrc'
-alias ros2init='source /opt/ros/jazzy/setup.zsh'
+alias ros2init='source /opt/ros/lyrical/setup.zsh'
 alias python='python3'
 
 source /opt/ros/lyrical/setup.zsh

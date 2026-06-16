@@ -3,12 +3,32 @@
   "dockerComposeFile": "compose.yaml",
   "service": "robot-dev",
   "workspaceFolder": "/workspace",
+  "portsAttributes": {
+    ".*": {
+      "onAutoForward": "ignore"
+    }
+  },
   "customizations": {
     "vscode": {
       "extensions": [
         "ms-python.python",
-        "ms-vscode.cpptools"
-      ]
+        "ms-vscode.cpptools",
+        "redhat.vscode-yaml",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/workspace/src/api/.venv/bin/python",
+        "python.terminal.activateEnvironment": false
+      }
     }
-  }
+  },
+  "runArgs": [
+    "--env", "DISPLAY=${env:DISPLAY}",
+    "--volume", "/tmp/.X11-unix:/tmp/.X11-unix"
+  ],
+  "containerEnv": {
+    "DISPLAY": "${env:DISPLAY}"
+  },
+  // "postCreateCommand": "cd src/api && uv venv --system-site-packages && uv sync"
+  // "postCreateCommand": "cd src/api && uv venv --clear --system-site-packages && uv sync"
 }
