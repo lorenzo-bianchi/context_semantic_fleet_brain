@@ -3,15 +3,19 @@ import logging
 from contextlib import asynccontextmanager
 
 import torch
-from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi import Request, FastAPI, APIRouter, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 from qdrant_client import AsyncQdrantClient
 from transformers import CLIPProcessor, CLIPModel
 
 import asyncpg
 from dotenv import load_dotenv
+
+# Load Jinja template
+templates = Jinja2Templates(directory="templates")
 
 # Load environment variables
 load_dotenv()
@@ -62,7 +66,7 @@ async def lifespan(app: FastAPI):
     state.device = "cuda" if torch.cuda.is_available() else "cpu"
     logger.info(f"Loading local CLIP model on device: {state.device}")
     local_model_path = os.path.join(os.path.dirname(__file__), "local_models", "clip")
-    
+
     if not os.path.exists(local_model_path):
         logger.error(f"Local model not found at {local_model_path}. Run 'scripts/download_model.py' first!")
     else:
@@ -160,14 +164,14 @@ def get_embedding(text: str):
         return output.pooler_output.detach().cpu().reshape(-1).tolist()
 
 # --- ENDPOINTS ---
+@app.get("/", response_class=HTMLResponse)
+async def frontend(request: Request):
+    return templates.TemplateResponse(request=request, name="index.html")
+
 @app.get("/health")
 def health(): 
     return {"status": "ok"}
 
-@app.get("/", include_in_schema=False)
-async def root():
-    """Redirects the root path directly to the Swagger documentation."""
-    return RedirectResponse(url="/docs")
 
 @app.get("/health", tags=["System"])
 async def health_check():

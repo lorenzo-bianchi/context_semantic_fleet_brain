@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>🤖 Fleet Brain Dashboard</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f5; margin: 0; padding: 40px; display: flex; justify-content: center; }
+        .container { background-color: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 700px; width: 100%; }
+        h2 { color: #1a73e8; margin-top: 0; display: flex; align-items: center; gap: 10px; }
+        .section { margin-bottom: 25px; padding-bottom: 20px; border-bottom: 1px solid #eee; }
+        .section:last-child { border-bottom: none; }
+
+        .button-group { display: flex; gap: 10px; margin-bottom: 15px; }
+        .input-group { display: flex; gap: 10px; }
+
+        input[type="text"] { flex: 1; padding: 10px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; outline: none; }
+        input[type="text"]:focus { border-color: #1a73e8; }
+
+        button { padding: 10px 20px; font-size: 15px; border: none; border-radius: 6px; cursor: pointer; transition: opacity 0.2s; color: white; font-weight: 600; }
+        button:hover { opacity: 0.8; }
+
+        .btn-primary { background-color: #1a73e8; }
+        .btn-secondary { background-color: #607d8b; }
+        .btn-success { background-color: #4caf50; }
+
+        .output-area { background-color: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 6px; height: 250px; overflow-y: auto; font-family: monospace; white-space: pre-wrap; word-wrap: break-word; font-size: 14px; }
+        .log-time { color: #888; font-size: 12px; margin-right: 8px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>🤖 Fleet Brain Dashboard</h2>
+
+        <div class="section">
+            <div class="button-group">
+                <button class="btn-success" onclick="checkHealth()">🏥 Health Check</button>
+                <button class="btn-secondary" onclick="fetchHistory()">📜 View History</button>
+                <button class="btn-secondary" onclick="clearConsole()" style="margin-left: auto; background-color: #e53935;">🗑️ Clear</button>
+            </div>
+        </div>
+
+        <div class="section">
+            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">Dispatch New Command (CLIP Embedding)</label>
+            <div class="input-group">
+                <input type="text" id="instructionInput" value="Explore the room" placeholder="e.g., Move forward by 2 meters...">
+                <button class="btn-primary" onclick="sendCommand()">🚀 Send</button>
+            </div>
+        </div>
+
+        <div>
+            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">Terminal Output</label>
+            <div id="outputBox" class="output-area">Waiting for actions...</div>
+        </div>
+    </div>
+
+    <script>
+        const outputBox = document.getElementById('outputBox');
+
+        function logToConsole(message, data = null) {
+            const now = new Date().toLocaleTimeString();
+            let logHtml = `<div style="margin-bottom: 10px;"><span class="log-time">[${now}]</span> ${message}`;
+            if (data) {
+                logHtml += `\n<span style="color: #4EC9B0;">${JSON.stringify(data, null, 2)}</span>`;
+            }
+            logHtml += `</div>`;
+
+            if (outputBox.innerText === "Waiting for actions...") outputBox.innerHTML = "";
+            outputBox.innerHTML = logHtml + outputBox.innerHTML;
+        }
+
+        function clearConsole() {
+            outputBox.innerHTML = "Waiting for actions...";
+        }
+
+        async function checkHealth() {
+            logToConsole("⏳ Running health check...");
+            try {
+                const response = await fetch('/health');
+                const data = await response.json();
+                logToConsole("✅ Health Check OK:", data);
+            } catch (error) {
+                logToConsole("❌ Health Check Failed. API is offline.");
+            }
+        }
+
+        async function fetchHistory() {
+            logToConsole("⏳ Fetching command history from DB...");
+            try {
+                const response = await fetch('/api/v1/history'); 
+                if (!response.ok) throw new Error("Endpoint not found or error");
+                const data = await response.json();
+                logToConsole("📜 Database History:", data);
+            } catch (error) {
+                logToConsole("⚠️ Cannot fetch history. Did you create the GET /api/v1/history route?");
+            }
+        }
+
+        async function sendCommand() {
+            const instruction = document.getElementById('instructionInput').value;
+            if (!instruction) return;
+
+            logToConsole(`⏳ Generating CLIP embedding for: "${instruction}"...`);
+
+            try {
+                const response = await fetch('/api/v1/command', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id: "dev_user",
+                        instruction: instruction
+                    })
+                });
+
+                const data = await response.json();
+                logToConsole("✅ Command Processed successfully:", data);
+            } catch (error) {
+                logToConsole("❌ Failed to process command.");
+            }
+        }
+    </script>
+</body>
+</html>
