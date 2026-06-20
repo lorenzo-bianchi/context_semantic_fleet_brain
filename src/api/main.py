@@ -103,14 +103,21 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    logger.info("Shutting down API: Closing connections and cleaning up VRAM...")
+    logger.info("Shutting down API: Cleaning up...")
 
-    # Teardown: Close only if they are real connections, NOT mocks
-    if state.qdrant_client and not isinstance(state.qdrant_client, AsyncMock):
-        await state.qdrant_client.close()
+    # Teardown: Close Qdrant only if it exists and has a close method
+    if state.qdrant_client and hasattr(state.qdrant_client, "close"):
+        try:
+            await state.qdrant_client.close()
+        except Exception as e:
+            logger.warning(f"Error closing Qdrant: {e}")
 
-    if state.pg_pool and not isinstance(state.pg_pool, AsyncMock):
-        await state.pg_pool.close()
+    # Teardown: Close Pool only if it exists, is not a MockPool, and has a close method
+    if state.pg_pool and type(state.pg_pool).__name__ != "MockPool" and hasattr(state.pg_pool, "close"):
+        try:
+            await state.pg_pool.close()
+        except Exception as e:
+            logger.warning(f"Error closing Postgres pool: {e}")
 
     state.ml_models.clear()
     if torch.cuda.is_available():
