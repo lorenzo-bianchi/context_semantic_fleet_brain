@@ -11,7 +11,7 @@
         .section:last-child { border-bottom: none; }
 
         .button-group { display: flex; gap: 10px; margin-bottom: 15px; }
-        .input-group { display: flex; gap: 10px; }
+        .input-group { display: flex; gap: 10px; margin-bottom: 10px; }
 
         input[type="text"] { flex: 1; padding: 10px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; outline: none; }
         input[type="text"]:focus { border-color: #1a73e8; }
@@ -40,11 +40,17 @@
         </div>
 
         <div class="section">
-            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">Dispatch New Command (CLIP Embedding)</label>
+            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">Dispatch Command & Analyze Scene</label>
+
             <div class="input-group">
-                <input type="text" id="instructionInput" value="Explore the room" placeholder="e.g., Move forward by 2 meters...">
-                <button class="btn-primary" onclick="sendCommand()">🚀 Send</button>
+                <input type="text" id="instructionInput" value="Explore the room" placeholder="Text instruction (e.g., Find the charging station...)">
             </div>
+
+            <div class="input-group" style="align-items: center; margin-top: 10px;">
+                <input type="file" id="imageFileInput" accept="image/*" style="flex: 1;">
+                <button class="btn-primary" onclick="sendCommand()">🚀 Execute</button>
+            </div>
+            <small style="color: #666; font-style: italic;">Select a local image to evaluate visual scene, or leave empty for Text-only Embedding.</small>
         </div>
 
         <div>
@@ -91,30 +97,51 @@
                 const data = await response.json();
                 logToConsole("📜 Database History:", data);
             } catch (error) {
-                logToConsole("⚠️ Cannot fetch history. Did you create the GET /api/v1/history route?");
+                logToConsole("⚠️ Cannot fetch history.");
             }
         }
 
         async function sendCommand() {
             const instruction = document.getElementById('instructionInput').value;
+            const fileInput = document.getElementById('imageFileInput');
+            const file = fileInput.files[0];
+
             if (!instruction) return;
 
-            logToConsole(`⏳ Generating CLIP embedding for: "${instruction}"...`);
+            if (file) {
+                logToConsole(`⏳ Uploading local file "${file.name}" and analyzing...`);
 
-            try {
-                const response = await fetch('/api/v1/command', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        user_id: "dev_user",
-                        instruction: instruction
-                    })
-                });
+                const formData = new FormData();
+                formData.append("instruction", instruction);
+                formData.append("image_file", file);
 
-                const data = await response.json();
-                logToConsole("✅ Command Processed successfully:", data);
-            } catch (error) {
-                logToConsole("❌ Failed to process command.");
+                try {
+                    const response = await fetch('/api/v1/analyze-scene', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await response.json();
+                    logToConsole(`✅ Response from /analyze-scene:`, data);
+                } catch (error) {
+                    logToConsole(`❌ Failed to connect to /analyze-scene.`);
+                }
+            } else {
+                logToConsole(`⏳ Calling /command to generate text embedding...`);
+
+                const payload = { user_id: "dev_user", instruction: instruction };
+                try {
+                    const response = await fetch('/api/v1/command', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const data = await response.json();
+                    logToConsole(`✅ Response from /command:`, data);
+                } catch (error) {
+                    logToConsole(`❌ Failed to connect to /command.`);
+                }
             }
         }
     </script>

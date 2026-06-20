@@ -1,18 +1,21 @@
-import os
-import logging
+import asyncpg
+import os, logging, requests
 from contextlib import asynccontextmanager
+from dotenv import load_dotenv
+from PIL import Image
+from io import BytesIO
 
-import torch
-from fastapi import Request, FastAPI, APIRouter, HTTPException
+from fastapi import Request, FastAPI, APIRouter, HTTPException, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, Field
+
+import torch
+import torch.nn.functional as F
 from qdrant_client import AsyncQdrantClient
+from pydantic import BaseModel, Field
 from transformers import CLIPProcessor, CLIPModel
 
-import asyncpg
-from dotenv import load_dotenv
 
 # Load Jinja template
 templates = Jinja2Templates(directory="templates")
@@ -29,7 +32,7 @@ class AppState:
     ml_models = {}
     qdrant_client: AsyncQdrantClient = None
     pg_pool: asyncpg.Pool = None
-    device: str = "cpu"
+    device: str = "cuda" if torch.cuda.is_available() else "cpu"
 
 state = AppState()
 
@@ -43,6 +46,10 @@ class CommandResponse(BaseModel):
     status: str
     task_id: str
     message: str
+
+class SceneRequest(BaseModel):
+    image_url: str
+    instruction: str
 
 # --- LIFESPAN ---
 @asynccontextmanager
@@ -172,6 +179,41 @@ async def frontend(request: Request):
 def health(): 
     return {"status": "ok"}
 
+@app.post("/api/v1/analyze-scene")
+async def analyze_scene(
+    instruction: str = Form(...),
+    image_file: UploadFile = File(...)
+):
+    """Confronta un'immagine caricata in locale con un'istruzione (Multimodale)."""
+    model = state.ml_models["clip_model"]
+    processor = state.ml_models["clip_processor"]
+
+    if not model or not processor:
+        return {"status": "error", "message": "Model not loaded properly."}
+
+    try:
+        image_bytes = await image_file.read()
+        image = Image.open(BytesIO(image_bytes)).convert("RGB")
+        inputs = processor(text=[instruction], images=image, return_tensors="pt", padding=True)
+        inputs = {k: v.to(state.device) for k, v in inputs.items()}
+        with torch.no_grad():
+            outputs = model(**inputs)
+
+        image_embeds = F.normalize(outputs.image_embeds, p=2, dim=-1)
+        text_embeds = F.normalize(outputs.text_embeds, p=2, dim=-1)
+
+        cosine_similarity = torch.matmul(image_embeds, text_embeds.t())
+        raw_score = cosine_similarity.item()
+
+        return {
+            "status": "success",
+            "instruction": instruction,
+            "filename": image_file.filename,
+            "cosine_similarity_score": round(raw_score, 4),
+            "match_confidence_percent": round(max(0, raw_score) * 100, 2)
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 @app.get("/health", tags=["System"])
 async def health_check():
