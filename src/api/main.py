@@ -48,10 +48,8 @@ async def lifespan(app: FastAPI):
     Initializes the PostgreSQL connection pool, the Qdrant client, 
     and loads ML/RAG models into memory.
     """
-    # If dependencies are already mocked (e.g., during tests), skip initialization
-    from unittest.mock import AsyncMock
-    if isinstance(state.pg_pool, AsyncMock):
-        logger.info("Mocked state detected: skipping real initialization.")
+    if os.getenv("TESTING") == "true":
+        logger.info("Modalità Test: Salto il caricamento pesante. API avviata 'a vuoto'.")
         yield
         return
 
@@ -162,6 +160,10 @@ def get_embedding(text: str):
         return output.pooler_output.detach().cpu().reshape(-1).tolist()
 
 # --- ENDPOINTS ---
+@app.get("/health")
+def health(): 
+    return {"status": "ok"}
+
 @app.get("/", include_in_schema=False)
 async def root():
     """Redirects the root path directly to the Swagger documentation."""
