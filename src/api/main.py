@@ -46,17 +46,25 @@ async def lifespan(app: FastAPI):
     """
     Manages the application lifecycle.
     Initializes the PostgreSQL connection pool, the Qdrant client, 
-    and loads ML/RAG models into memory to prevent memory leaks.
+    and loads ML/RAG models into memory.
     """
+    # If dependencies are already mocked (e.g., during tests), skip initialization
+    from unittest.mock import AsyncMock
+    if isinstance(state.pg_pool, AsyncMock):
+        logger.info("Mocked state detected: skipping real initialization.")
+        yield
+        return
+
     logger.info("Starting API services: Initializing DB connections and Models...")
 
-    # 1. Initialize Qdrant Client (async gRPC for maximum performance)
+    # 1. Initialize Qdrant Client
     state.qdrant_client = AsyncQdrantClient(host="localhost", grpc_port=6334, prefer_grpc=True)
 
-    # 2. Load Multimodal Model (CLIP) from local storage
+    # 2. Load Multimodal Model (CLIP)
     state.device = "cuda" if torch.cuda.is_available() else "cpu"
     logger.info(f"Loading local CLIP model on device: {state.device}")
     local_model_path = os.path.join(os.path.dirname(__file__), "local_models", "clip")
+    
     if not os.path.exists(local_model_path):
         logger.error(f"Local model not found at {local_model_path}. Run 'scripts/download_model.py' first!")
     else:
@@ -66,7 +74,6 @@ async def lifespan(app: FastAPI):
     # 3. PostgreSQL
     logger.info("Connecting to PostgreSQL...")
     try:
-        # Read all parameters from the .env file (with fallback to defaults if missing)
         db_user = os.getenv("POSTGRES_USER", "fleet_admin")
         db_password = os.getenv("POSTGRES_PASSWORD")
         db_name = os.getenv("POSTGRES_DB", "fleet_brain")
@@ -75,13 +82,10 @@ async def lifespan(app: FastAPI):
         if not db_password:
             raise ValueError("POSTGRES_PASSWORD not found. Check the .env file!")
 
-        # Dynamic and clean connection URL
         DB_URL = f"postgresql://{db_user}:{db_password}@{db_host}:5432/{db_name}"
-
         state.pg_pool = await asyncpg.create_pool(DB_URL)
         logger.info("PostgreSQL connected successfully!")
 
-        # --- Automatic creation of the history table ---
         async with state.pg_pool.acquire() as conn:
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS command_history (
@@ -101,15 +105,13 @@ async def lifespan(app: FastAPI):
 
     logger.info("Shutting down API: Closing connections and cleaning up VRAM...")
 
-    # Teardown: Close Qdrant connection
-    if state.qdrant_client:
+    # Teardown: Close only if they are real connections, NOT mocks
+    if state.qdrant_client and not isinstance(state.qdrant_client, AsyncMock):
         await state.qdrant_client.close()
 
-    # Teardown: Close AsyncPG pool
-    if state.pg_pool:
+    if state.pg_pool and not isinstance(state.pg_pool, AsyncMock):
         await state.pg_pool.close()
 
-    # Teardown: Explicitly free GPU/CPU memory
     state.ml_models.clear()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
