@@ -19,7 +19,7 @@ services:
       - ..:/workspace
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:roecho $DB_PASSWORD
+      - /etc/timezone:/etc/timezone:ro
       - /dev:/dev
       - ./zsh_history:/home/zero/zsh_history
 
@@ -39,7 +39,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: fleet_admin
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: fleet_brain
     ports:
       - "5432:5432"

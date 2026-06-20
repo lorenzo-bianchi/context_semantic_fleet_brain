@@ -29,6 +29,5 @@
   "containerEnv": {
     "DISPLAY": "${env:DISPLAY}"
   },
-  // "postCreateCommand": "cd src/api && uv venv --system-site-packages && uv sync"
-  // "postCreateCommand": "cd src/api && uv venv --clear --system-site-packages && uv sync"
+  "postCreateCommand": "cd src/api && (uv venv --system-site-packages || true) && uv sync"
 }
