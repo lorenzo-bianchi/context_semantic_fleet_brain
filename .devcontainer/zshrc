@@ -43,11 +43,9 @@ alias l='ls -CF'
 alias la='ls -A'
 alias ll='ls -alF'
 alias zshrc='nano ~/.zshrc'
-alias ros2init='source /opt/ros/lyrical/setup.zsh'
+alias ros2init='source /opt/ros/lyrical/setup.zsh && source /workspace/install/local_setup.zsh'
 alias python='python3'
 
-source /opt/ros/lyrical/setup.zsh
-source /workspace/install/local_setup.zsh
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 
 if [ -f "$HOME/.local/bin/env" ]; then
