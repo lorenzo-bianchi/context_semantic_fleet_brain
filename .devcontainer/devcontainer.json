@@ -4,6 +4,10 @@
   "service": "robot-dev",
   "workspaceFolder": "/workspace",
   "portsAttributes": {
+    "8000": {
+      "label": "API",
+      "onAutoForward": "silent"
+    },
     ".*": {
       "onAutoForward": "ignore"
     }
@@ -29,5 +33,6 @@
   "containerEnv": {
     "DISPLAY": "${env:DISPLAY}"
   },
-  "postCreateCommand": "cd src/api && (uv venv --system-site-packages || true) && uv sync"
+  // "postCreateCommand": "cd src/api && (uv venv --system-site-packages || true) && uv sync"
+  "postCreateCommand": "sudo chown -R zero:zero /home/zero/.cache /home/zero/.local && cd src/api && uv sync"
 }
