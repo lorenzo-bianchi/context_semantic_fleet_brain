@@ -41,7 +41,7 @@ jobs:
       - name: 🧪 Run Pytest
         env:
           POSTGRES_USER: "test_user"
-          POSTGRES_PASSWORD: {{ secrets.POSTGRES_TEST_PASSWORD }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_TEST_PASSWORD }}
           POSTGRES_DB: "test_db"
           POSTGRES_HOST: "127.0.0.1"
         run: uv run pytest tests/
