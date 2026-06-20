@@ -38,10 +38,7 @@ jobs:
       - name: 📦 Install dependencies
         run: uv sync
 
-      - name: 🧪 Run Pytest
+      - name: 🧪 Run Minimal Tests
         env:
-          POSTGRES_USER: "test_user"
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_TEST_PASSWORD }}
-          POSTGRES_DB: "test_db"
-          POSTGRES_HOST: "127.0.0.1"
+          TESTING: "true"
         run: uv run pytest tests/
