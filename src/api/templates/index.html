@@ -31,6 +31,7 @@
     <div class="container">
         <h2>🤖 Fleet Brain Dashboard</h2>
 
+        <!-- Top Controls: Health & History -->
         <div class="section">
             <div class="button-group">
                 <button class="btn-success" onclick="checkHealth()">🏥 Health Check</button>
@@ -39,6 +40,7 @@
             </div>
         </div>
 
+        <!-- Command Dispatcher & Scene Analyzer -->
         <div class="section">
             <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">Dispatch Command & Analyze Scene</label>
 
@@ -53,6 +55,18 @@
             <small style="color: #666; font-style: italic;">Select a local image to evaluate visual scene, or leave empty for Text-only Embedding.</small>
         </div>
 
+        <!-- Semantic Memory Search -->
+        <div class="section">
+            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">🧠 Semantic Memory Search (Qdrant)</label>
+            <div class="input-group">
+                <input type="text" id="searchInput" placeholder="e.g., 'Move to where the food is'...">
+                <input type="number" id="limitInput" value="3" min="1" max="10" title="Results limit">
+                <button class="btn-warning" onclick="searchMemory()">🔍 Search</button>
+            </div>
+            <small style="color: #666; font-style: italic;">Search for past commands by their mathematical meaning, not by exact words.</small>
+        </div>
+
+        <!-- Console Output -->
         <div>
             <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">Terminal Output</label>
             <div id="outputBox" class="output-area">Waiting for actions...</div>
@@ -109,6 +123,7 @@
             if (!instruction) return;
 
             if (file) {
+                // Multimodal
                 logToConsole(`⏳ Uploading local file "${file.name}" and analyzing...`);
 
                 const formData = new FormData();
@@ -122,11 +137,12 @@
                     });
 
                     const data = await response.json();
-                    logToConsole(`✅ Response from /analyze-scene:`, data);
+                    logToConsole(`✅ Response from /analyze-scene:`, data);<!-- Console Output -->
                 } catch (error) {
                     logToConsole(`❌ Failed to connect to /analyze-scene.`);
                 }
             } else {
+                // Text only
                 logToConsole(`⏳ Calling /command to generate text embedding...`);
 
                 const payload = { user_id: "dev_user", instruction: instruction };
@@ -142,6 +158,37 @@
                 } catch (error) {
                     logToConsole(`❌ Failed to connect to /command.`);
                 }
+            }
+        }
+
+        async function searchMemory() {
+            const query = document.getElementById('searchInput').value;
+            const limit = document.getElementById('limitInput').value;
+
+            if (!query) return;
+
+            logToConsole(`⏳ Searching Qdrant Memory for meaning of: "${query}"...`);
+
+            const payload = { query: query, limit: parseInt(limit) };
+
+            try {
+                const response = await fetch('/api/v1/search-memory', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+
+                if (data.status === "success") {
+                    // Format output nicely to show scores
+                    logToConsole(`🧠 Top Semantic Matches:`, data.matches);
+                } else {
+                    logToConsole(`❌ Search Error:`, data);
+                }
+
+            } catch (error) {
+                logToConsole(`❌ Failed to connect to /search-memory.`);
             }
         }
     </script>

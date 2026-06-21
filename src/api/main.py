@@ -1,5 +1,5 @@
 import asyncpg
-import os, logging, requests
+import os, logging
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from PIL import Image
@@ -12,10 +12,12 @@ from fastapi.templating import Jinja2Templates
 
 import torch
 import torch.nn.functional as F
-from qdrant_client import AsyncQdrantClient
+from qdrant_client import QdrantClient, models
 from pydantic import BaseModel, Field
 from transformers import CLIPProcessor, CLIPModel
-
+import uuid
+import json
+from google import genai
 
 # Load Jinja template
 templates = Jinja2Templates(directory="templates")
@@ -30,9 +32,10 @@ logger = logging.getLogger(__name__)
 # --- GLOBAL APP STATE ---
 class AppState:
     ml_models = {}
-    qdrant_client: AsyncQdrantClient = None
+    qdrant_client: QdrantClient = None
     pg_pool: asyncpg.Pool = None
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
+    gemini_client = None
 
 state = AppState()
 
@@ -46,10 +49,15 @@ class CommandResponse(BaseModel):
     status: str
     task_id: str
     message: str
+    plan: list = []
 
 class SceneRequest(BaseModel):
     image_url: str
     instruction: str
+
+class SearchRequest(BaseModel):
+    query: str
+    limit: int = 3
 
 # --- LIFESPAN ---
 @asynccontextmanager
@@ -67,7 +75,31 @@ async def lifespan(app: FastAPI):
     logger.info("Starting API services: Initializing DB connections and Models...")
 
     # 1. Initialize Qdrant Client
-    state.qdrant_client = AsyncQdrantClient(host="localhost", grpc_port=6334, prefer_grpc=True)
+    state.qdrant_client = QdrantClient(host="localhost", port=6333)
+
+    # 1.5 Initialize Gemini Client
+    if os.getenv("GEMINI_API_KEY"):
+        state.gemini_client = genai.Client()
+        logger.info("Gemini API Client succesfully initialzed.")
+    else:
+        logger.warning("GEMINI_API_KEY non trovata. L'Agente non potrà ragionare.")
+
+    try:
+        collections = state.qdrant_client.get_collections()
+        collection_names = [c.name for c in collections.collections]
+        if "semantic_memory" not in collection_names:
+            state.qdrant_client.create_collection(
+                collection_name="semantic_memory",
+                vectors_config=models.VectorParams(
+                    size=512,
+                    distance=models.Distance.COSINE
+                )
+            )
+            logger.info("Qdrant collection 'semantic_memory' succesfully created.")
+        else:
+            logger.info("Qdrant collection 'semantic_memory' already existing.")
+    except Exception as e:
+        logger.error(f"Error with Qdrant initialization: {e}")
 
     # 2. Load Multimodal Model (CLIP)
     state.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -114,14 +146,14 @@ async def lifespan(app: FastAPI):
 
     logger.info("Shutting down API: Cleaning up...")
 
-    # Teardown: Close Qdrant only if it exists and has a close method
+    # Teardown: Close Qdrant
     if state.qdrant_client and hasattr(state.qdrant_client, "close"):
         try:
-            await state.qdrant_client.close()
+            state.qdrant_client.close()
         except Exception as e:
             logger.warning(f"Error closing Qdrant: {e}")
 
-    # Teardown: Close Pool only if it exists, is not a MockPool, and has a close method
+    # Teardown: Close Pool
     if state.pg_pool and type(state.pg_pool).__name__ != "MockPool" and hasattr(state.pg_pool, "close"):
         try:
             await state.pg_pool.close()
@@ -140,10 +172,10 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS configuration (to be refined and locked down for production)
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # TODO: Replace with specific frontend domains/IPs
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -175,18 +207,19 @@ def get_embedding(text: str):
 async def frontend(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
 
-@app.get("/health")
-def health(): 
-    return {"status": "ok"}
+@app.get("/health", tags=["System"])
+async def health_check():
+    """Vital endpoint for Kubernetes Liveness and Readiness probes."""
+    return {"status": "ok", "service": "fleet_brain_api"}
 
 @app.post("/api/v1/analyze-scene")
 async def analyze_scene(
     instruction: str = Form(...),
     image_file: UploadFile = File(...)
 ):
-    """Confronta un'immagine caricata in locale con un'istruzione (Multimodale)."""
-    model = state.ml_models["clip_model"]
-    processor = state.ml_models["clip_processor"]
+    """Compare a loaded image with an instruction (Multimodal)."""
+    model = state.ml_models.get("clip_model")
+    processor = state.ml_models.get("clip_processor")
 
     if not model or not processor:
         return {"status": "error", "message": "Model not loaded properly."}
@@ -215,37 +248,87 @@ async def analyze_scene(
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-@app.get("/health", tags=["System"])
-async def health_check():
-    """Vital endpoint for Kubernetes Liveness and Readiness probes."""
-    return {"status": "ok", "service": "fleet_brain_api"}
-
+# --- ROUTER ENDPOINTS ---
 @router.post("/command", response_model=CommandResponse, tags=["Orchestration"])
 async def dispatch_command(payload: CommandRequest):
     """
     Receives a text command, saves it to the PostgreSQL history,
-    and (future) passes it to the LLM agent for decomposition.
+    and stores its vector embedding in Qdrant for semantic search.
     """
     logger.info(f"Received command from {payload.user_id}: {payload.instruction}")
 
     try:
-        # 1. Save command to Historical Memory (PostgreSQL)
-        async with state.pg_pool.acquire() as conn:
-            await conn.execute(
-                "INSERT INTO command_history (user_id, instruction, status) VALUES ($1, $2, $3)",
-                payload.user_id, payload.instruction, "pending"
-            )
+        # 0. Generate command embedding using GPU
+        embedding_vector = get_embedding(payload.instruction)
+        pg_id = None
 
-        # 2. Here we will insert the LangGraph/CrewAI processing logic and Qdrant storage
-        pass
+        # 1. Save command to Historical Memory (PostgreSQL)
+        if state.pg_pool:
+            async with state.pg_pool.acquire() as conn:
+                pg_id = await conn.fetchval(
+                    "INSERT INTO command_history (user_id, instruction, status) VALUES ($1, $2, $3) RETURNING id",
+                    payload.user_id, payload.instruction, "pending"
+                )
+
+        # 2. Save in Qdrant 
+        if state.qdrant_client:
+            point_id = str(uuid.uuid4())
+            state.qdrant_client.upsert(
+                collection_name="semantic_memory",
+                points=[
+                    models.PointStruct(
+                        id=point_id,
+                        vector=embedding_vector,
+                        payload={
+                            "pg_id": int(pg_id) if pg_id is not None else None,
+                            "user_id": str(payload.user_id),
+                            "instruction": str(payload.instruction),
+                            "status": "pending"
+                        }
+                    )
+                ]
+            )
+            logger.info(f"Comando salvato in Qdrant con ID: {point_id}")
+
+        # 3. Agent Reasoning (Gemini LLM)
+        agent_plan = []
+        if state.gemini_client:
+            prompt = f"""
+You are the 'Fleet Brain', the AI of a ROS 2 robot.
+Your task is to analyze the user's command and break it down into a logical sequence of actions.
+Allowed actions are: NAVIGATE, SEARCH, PICK, DROP, COMMUNICATE.
+
+User command: "{payload.instruction}"
+
+Respond ONLY and EXCLUSIVELY with a valid JSON array, without markdown text and without additional explanations.
+Example output:
+[
+  {{"action": "NAVIGATE", "target": "kitchen", "reason": "reach the requested area"}},
+  {{"action": "SEARCH", "target": "fridge", "reason": "find the target object"}}
+]
+"""
+            try:
+                response = state.gemini_client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=prompt
+                )
+                # Clean the response from potential markdown blocks
+                raw_json = response.text.strip().removeprefix("```json").removesuffix("```").strip()
+                agent_plan = json.loads(raw_json)
+                logger.info(f"Agent plan generated: {agent_plan}")
+            except Exception as llm_err:
+                logger.error(f"Error during Gemini reasoning: {llm_err}")
+
     except Exception as e:
-        logger.error(f"Error processing command from {payload.user_id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal agent processing error.")
+        error_details = f"{type(e).__name__}: {str(e)}"
+        logger.error(f"Error processing command from {payload.user_id}: {error_details}")
+        raise HTTPException(status_code=500, detail=f"Internal processing error -> {error_details}")
 
     return CommandResponse(
         status="accepted",
         task_id="task_mock_12345",
-        message="Command accepted and saved to history."
+        message="Command accepted and analyzed by Agent.",
+        plan=agent_plan
     )
 
 @router.get("/history", tags=["Orchestration"])
@@ -261,6 +344,7 @@ async def get_command_history(limit: int = 10):
                 "SELECT id, user_id, instruction, status, timestamp FROM command_history ORDER BY timestamp DESC LIMIT $1",
                 limit
             )
+            # Convert timestamp to string for JSON serialization
             return [dict(record) for record in records]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -279,7 +363,7 @@ async def test_embedding_endpoint(text: str = "Embedding generation test"):
             "status": "success",
             "input_text": text,
             "vector_dimension": len(embedding_vector),
-            "vector_preview": embedding_vector[:5] # Show only the first 5 numbers
+            "vector_preview": embedding_vector[:5]
         }
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -299,6 +383,39 @@ async def test_db():
             version = await conn.fetchval('SELECT version();')
             return {"status": "success", "db_version": version}
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/search-memory", tags=["Memory"])
+async def search_memory(payload: SearchRequest):
+    """Search in the semantic memory (Qdrant) the most similar commands to the entered text."""
+    if not state.qdrant_client:
+        raise HTTPException(status_code=500, detail="Qdrant client not connected.")
+
+    try:
+        query_vector = get_embedding(payload.query)
+
+        search_result = state.qdrant_client.query_points(
+            collection_name="semantic_memory",
+            query=query_vector,
+            limit=payload.limit
+        ).points
+
+        results = []
+        for hit in search_result:
+            results.append({
+                "score": round(hit.score, 4),
+                "instruction": hit.payload.get("instruction"),
+                "user_id": hit.payload.get("user_id"),
+                "pg_id": hit.payload.get("pg_id")
+            })
+
+        return {
+            "status": "success",
+            "query": payload.query,
+            "matches": results
+        }
+    except Exception as e:
+        logger.error(f"Error during semantic search: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 app.include_router(router)
