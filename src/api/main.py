@@ -1,5 +1,6 @@
+import asyncio
 import asyncpg
-import os, logging
+import os, logging, json, uuid
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from PIL import Image
@@ -15,8 +16,6 @@ import torch.nn.functional as F
 from qdrant_client import QdrantClient, models
 from pydantic import BaseModel, Field
 from transformers import CLIPProcessor, CLIPModel
-import uuid
-import json
 from google import genai
 
 # Load Jinja template
@@ -29,6 +28,43 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# --- ROS 2 BRIDGE (Mock/Preparation) ---
+class ROS2Dispatcher:
+    """
+    Translates the semantic plans (JSON) of the LLM Agent into ROS 2 commands.
+    Currently in 'Simulation' mode. In the next step we will connect it
+    to roslibpy or an MQTT/DDS client.
+    """
+    def __init__(self):
+        self.connected = False
+        logger.info("🤖 ROS 2 Dispatcher initialized (Simulation Mode)")
+
+    async def execute_plan(self, plan: list):
+        logger.info("📡 Starting transmission of the plan to the ROS 2 network...")
+        for step, task in enumerate(plan):
+            action = task.get("action")
+            target = task.get("target")
+
+            logger.info(f"   ---> [Step {step+1}] Executing: {action} towards '{target}'")
+
+            # Simulating the physical times of the robot
+            await asyncio.sleep(1) 
+
+            if action == "NAVIGATE":
+                logger.info(f"        🚀 [Nav2] Sending Action Goal to /navigate_to_pose for coordinates of: {target}")
+            elif action == "SEARCH":
+                logger.info(f"        👁️ [Vision] Activating perception node (/object_detection) searching for: {target}")
+            elif action == "PICK":
+                logger.info(f"        🦾 [MoveIt2] Calculating kinematics and sending Trajectory Goal for: {target}")
+            elif action == "DROP":
+                logger.info(f"        🫳 [MoveIt2] Releasing payload at position: {target}")
+            elif action == "COMMUNICATE":
+                logger.info(f"        🔊 [HRI] Publishing string to topic /robot_tts: {target}")
+            else:
+                logger.warning(f"        ⚠️ [Error] Action not mapped in the ROS 2 framework: {action}")
+
+        logger.info("✅ Execution of the ROS 2 plan completed.")
+
 # --- GLOBAL APP STATE ---
 class AppState:
     ml_models = {}
@@ -36,6 +72,7 @@ class AppState:
     pg_pool: asyncpg.Pool = None
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     gemini_client = None
+    ros2_bridge = ROS2Dispatcher()
 
 state = AppState()
 
@@ -319,6 +356,12 @@ Example output:
             except Exception as llm_err:
                 logger.error(f"Error during Gemini reasoning: {llm_err}")
 
+        # 4. ROS 2 execution
+        if agent_plan:
+            # Run plan in background
+            import asyncio
+            asyncio.create_task(state.ros2_bridge.execute_plan(agent_plan))
+
     except Exception as e:
         error_details = f"{type(e).__name__}: {str(e)}"
         logger.error(f"Error processing command from {payload.user_id}: {error_details}")
@@ -327,7 +370,7 @@ Example output:
     return CommandResponse(
         status="accepted",
         task_id="task_mock_12345",
-        message="Command accepted and analyzed by Agent.",
+        message="Command accepted, analyzed by Agent and sent to ROS 2 Fleet.",
         plan=agent_plan
     )
 
