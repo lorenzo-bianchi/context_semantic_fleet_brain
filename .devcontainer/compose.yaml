@@ -63,6 +63,13 @@ services:
     volumes:
       - ./data/qdrant_storage:/qdrant/storage:z
 
+  redis:
+    image: redis:alpine
+    container_name: fleet_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
 volumes:
   pg_data:
   uv_cache:
