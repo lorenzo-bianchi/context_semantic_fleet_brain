@@ -1,4 +1,4 @@
-FROM ros:lyrical
+FROM ros:jazzy
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -10,8 +10,11 @@ RUN apt-get update && apt-get install -y \
     libopencv-dev \
     python3-opencv \
     python3-colcon-common-extensions \
-    ros-lyrical-cv-bridge \
-    ros-lyrical-image-transport \
+    ros-jazzy-cv-bridge \
+    ros-jazzy-image-transport \
+    ros-jazzy-image-transport-plugins \
+    ros-jazzy-nav-msgs \
+    ros-jazzy-sensor-msgs \
     libasound2-dev \
     libx11-dev \
     libxrandr-dev \
