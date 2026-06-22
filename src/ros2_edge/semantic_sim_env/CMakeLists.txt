@@ -23,7 +23,6 @@ pkg_check_modules(RAYLIB REQUIRED raylib)
 
 add_executable(simulator_node src/simulator_node.cpp)
 
-# ament usa la sintassi "plain" (senza keyword)
 ament_target_dependencies(simulator_node
   rclcpp
   sensor_msgs
@@ -33,13 +32,11 @@ ament_target_dependencies(simulator_node
   image_transport
 )
 
-# Rimane "plain" per non entrare in conflitto con ament_target_dependencies
 target_link_libraries(simulator_node
   ${RAYLIB_LIBRARIES}
   ${OpenCV_LIBS}
 )
 
-# PRIVATE è obbligatorio per target_include_directories
 target_include_directories(simulator_node PRIVATE
   ${RAYLIB_INCLUDE_DIRS}
 )

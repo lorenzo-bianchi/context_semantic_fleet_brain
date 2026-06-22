@@ -27,7 +27,7 @@ public:
         }
 
         InitWindow(640, 480, "Semantic Fleet Brain - Simulator");
-        
+
         camera_external_.position = Vector3{ 10.0f, 10.0f, 10.0f };
         camera_external_.target = Vector3{ 0.0f, 0.0f, 0.0f };
         camera_external_.up = Vector3{ 0.0f, 1.0f, 0.0f };
@@ -126,7 +126,7 @@ public:
 
         BeginDrawing();
             ClearBackground(SKYBLUE); 
-            
+
             BeginMode3D(active_camera);
                 DrawGrid(20, 1.0f);
                 DrawCube(Vector3{5.0f, 0.0f, 5.0f}, 2.0f, 2.0f, 2.0f, RED); 
@@ -140,7 +140,7 @@ public:
                 DrawText("MODE: FREE CAMERA", 10, 10, 20, DARKBLUE);
                 DrawText("WASD to Move | ARROWS to Rotate", 10, 35, 10, DARKGRAY);
             }
-            
+
             DrawText("Press 'C' to toggle camera", 10, 55, 10, DARKGRAY);
             DrawText(TextFormat("X: %.2f | Z: %.2f | Yaw: %.2f", drone_pos_.x, drone_pos_.z, drone_yaw_), 10, 75, 15, RED);
         EndDrawing();
@@ -199,8 +199,8 @@ private:
     Camera3D camera_fpv_{};
     bool use_fpv_ = false;
 
-    float ext_cam_yaw_ = -2.356f;   
-    float ext_cam_pitch_ = -0.615f; 
+    float ext_cam_yaw_ = -2.356f;
+    float ext_cam_pitch_ = -0.615f;
 
     Vector3 drone_pos_{0.0f, 0.5f, 0.0f};
     float drone_yaw_ = 0.0f;
