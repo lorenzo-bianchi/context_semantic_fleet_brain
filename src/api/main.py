@@ -5,6 +5,8 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from PIL import Image
 from io import BytesIO
+import httpx
+import re
 
 from fastapi import Request, FastAPI, APIRouter, HTTPException, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,8 +19,9 @@ from qdrant_client import QdrantClient, models
 from pydantic import BaseModel, Field
 from transformers import CLIPProcessor, CLIPModel
 from google import genai
+from google.genai import types
 
-# Load Jinja template
+# Load Jinja templates
 templates = Jinja2Templates(directory="templates")
 
 # Load environment variables
@@ -32,7 +35,7 @@ logger = logging.getLogger(__name__)
 class ROS2Dispatcher:
     """
     Translates the semantic plans (JSON) of the LLM Agent into ROS 2 commands.
-    Currently in 'Simulation' mode. In the next step we will connect it
+    Currently in 'Simulation' mode. In the next step, we will connect it
     to roslibpy or an MQTT/DDS client.
     """
     def __init__(self):
@@ -47,7 +50,7 @@ class ROS2Dispatcher:
 
             logger.info(f"   ---> [Step {step+1}] Executing: {action} towards '{target}'")
 
-            # Simulating the physical times of the robot
+            # Simulating the physical execution times of the robot
             await asyncio.sleep(1) 
 
             if action == "NAVIGATE":
@@ -73,10 +76,15 @@ class AppState:
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     gemini_client = None
     ros2_bridge = ROS2Dispatcher()
+    llm_provider = os.getenv("LLM_PROVIDER", "ollama") # "gemini" or "ollama"
+    ollama_url = "http://localhost:11434/api/generate"
 
 state = AppState()
 
 # --- SCHEMAS ---
+class LLMProviderRequest(BaseModel):
+    provider: str
+
 class CommandRequest(BaseModel):
     """Payload for sending a natural language command."""
     user_id: str = Field(..., description="User ID or calling system ID")
@@ -105,7 +113,7 @@ async def lifespan(app: FastAPI):
     and loads ML/RAG models into memory.
     """
     if os.getenv("TESTING") == "true":
-        logger.info("Modalità Test: Salto il caricamento pesante. API avviata 'a vuoto'.")
+        logger.info("Test mode: Skipping heavy loading. API started 'empty'.")
         yield
         return
 
@@ -117,9 +125,9 @@ async def lifespan(app: FastAPI):
     # 1.5 Initialize Gemini Client
     if os.getenv("GEMINI_API_KEY"):
         state.gemini_client = genai.Client()
-        logger.info("Gemini API Client succesfully initialzed.")
+        logger.info("Gemini API Client successfully initialized.")
     else:
-        logger.warning("GEMINI_API_KEY non trovata. L'Agente non potrà ragionare.")
+        logger.warning("GEMINI_API_KEY not found. The agent will not be able to reason.")
 
     try:
         collections = state.qdrant_client.get_collections()
@@ -132,9 +140,9 @@ async def lifespan(app: FastAPI):
                     distance=models.Distance.COSINE
                 )
             )
-            logger.info("Qdrant collection 'semantic_memory' succesfully created.")
+            logger.info("Qdrant collection 'semantic_memory' successfully created.")
         else:
-            logger.info("Qdrant collection 'semantic_memory' already existing.")
+            logger.info("Qdrant collection 'semantic_memory' already exists.")
     except Exception as e:
         logger.error(f"Error with Qdrant initialization: {e}")
 
@@ -221,6 +229,97 @@ app.add_middleware(
 router = APIRouter(prefix="/api/v1")
 
 # --- UTILS ---
+async def get_agent_plan(instruction: str):
+    # --- 1. Object-Based Prompting (The industry standard for LLMs) ---
+    prompt = f"""You are the 'Fleet Brain', the AI of a ROS 2 robot.
+    Analyze the following command and extract the FULL sequence of operations.
+    Allowed actions: NAVIGATE, SEARCH, PICK, DROP, COMMUNICATE.
+
+    Command: "{instruction}"
+
+    You MUST respond with a JSON object containing a SINGLE key called "plan". 
+    The value must be the array of all actions required. Do not stop until all steps are extracted.
+
+    Example format:
+    {{
+      "plan": [
+        {{"action": "NAVIGATE", "target": "kitchen"}},
+        {{"action": "SEARCH", "target": "bottle"}},
+        {{"action": "PICK", "target": "bottle"}},
+        {{"action": "COMMUNICATE", "target": "everyone about the bottle"}}
+      ]
+    }}
+
+    Output strictly the JSON object. No other text."""
+
+    raw_json = ""
+
+    # --- 2. API Calls ---
+    if state.llm_provider == "ollama":
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    state.ollama_url,
+                    json={
+                        "model": "gemma2:9b", 
+                        "prompt": prompt, 
+                        "stream": False,
+                        "format": "json" 
+                    },
+                    timeout=60.0
+                )
+                response.raise_for_status()
+                raw_json = response.json().get("response", "")
+            except httpx.ReadTimeout:
+                logger.error("Ollama timeout: Model is loading or GPU is busy.")
+                return []
+            except Exception as e:
+                logger.error(f"Ollama connection error: {e}")
+                return []
+    else:
+        try:
+            response = state.gemini_client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json"
+                )
+            )
+            raw_json = response.text
+        except Exception as e:
+            logger.error(f"Gemini API error: {e}")
+            return []
+
+    # --- 3. Simplified and Bulletproof Parsing ---
+    try:
+        cleaned_raw = raw_json.strip().removeprefix("```json").removesuffix("```").strip()
+        parsed_data = json.loads(cleaned_raw)
+
+        # Since we explicitly asked for {"plan": [...]}, the extraction is deterministic
+        if isinstance(parsed_data, dict) and "plan" in parsed_data:
+            if isinstance(parsed_data["plan"], list):
+                return parsed_data["plan"]
+
+        # Fallback if the LLM provided a top-level array despite the prompt
+        if isinstance(parsed_data, list):
+            return parsed_data
+
+        logger.error(f"JSON parsed but missing 'plan' array: {parsed_data}")
+        return []
+
+    except json.JSONDecodeError:
+        # Emergency regex fallback 
+        try:
+            match = re.search(r'\{.*\}', raw_json, re.DOTALL)
+            if match:
+                extracted = json.loads(match.group(0))
+                if "plan" in extracted:
+                    return extracted["plan"]
+        except Exception as fallback_error:
+            logger.error(f"RegEx fallback failed. Raw: {raw_json} | Error: {fallback_error}")
+
+        return []
+
 def get_embedding(text: str):
     """Reliably extract the pure 512-dim text embedding."""
     model = state.ml_models.get("clip_model")
@@ -325,36 +424,15 @@ async def dispatch_command(payload: CommandRequest):
                     )
                 ]
             )
-            logger.info(f"Comando salvato in Qdrant con ID: {point_id}")
+            logger.info(f"Command saved in Qdrant with ID: {point_id}")
 
-        # 3. Agent Reasoning (Gemini LLM)
+        # 3. Agent Reasoning (Switchable)
         agent_plan = []
-        if state.gemini_client:
-            prompt = f"""
-You are the 'Fleet Brain', the AI of a ROS 2 robot.
-Your task is to analyze the user's command and break it down into a logical sequence of actions.
-Allowed actions are: NAVIGATE, SEARCH, PICK, DROP, COMMUNICATE.
-
-User command: "{payload.instruction}"
-
-Respond ONLY and EXCLUSIVELY with a valid JSON array, without markdown text and without additional explanations.
-Example output:
-[
-  {{"action": "NAVIGATE", "target": "kitchen", "reason": "reach the requested area"}},
-  {{"action": "SEARCH", "target": "fridge", "reason": "find the target object"}}
-]
-"""
-            try:
-                response = state.gemini_client.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=prompt
-                )
-                # Clean the response from potential markdown blocks
-                raw_json = response.text.strip().removeprefix("```json").removesuffix("```").strip()
-                agent_plan = json.loads(raw_json)
-                logger.info(f"Agent plan generated: {agent_plan}")
-            except Exception as llm_err:
-                logger.error(f"Error during Gemini reasoning: {llm_err}")
+        try:
+            agent_plan = await get_agent_plan(payload.instruction)
+            logger.info(f"Agent plan generated via {state.llm_provider}: {agent_plan}")
+        except Exception as llm_err:
+            logger.error(f"Error during reasoning: {llm_err}")
 
         # 4. ROS 2 execution
         if agent_plan:
@@ -460,5 +538,16 @@ async def search_memory(payload: SearchRequest):
     except Exception as e:
         logger.error(f"Error during semantic search: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/llm-provider", tags=["System"])
+async def set_llm_provider(payload: LLMProviderRequest):
+    """Dynamically switch the LLM provider from the dashboard."""
+    if payload.provider not in ["gemini", "ollama"]:
+        raise HTTPException(status_code=400, detail="Invalid provider. Choose 'gemini' or 'ollama'.")
+
+    state.llm_provider = payload.provider
+    logger.info(f"🔄 LLM Provider switched to: {state.llm_provider}")
+
+    return {"status": "success", "active_provider": state.llm_provider}
 
 app.include_router(router)

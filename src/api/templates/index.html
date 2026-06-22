@@ -10,7 +10,7 @@
         .section { margin-bottom: 25px; padding-bottom: 20px; border-bottom: 1px solid #eee; }
         .section:last-child { border-bottom: none; }
 
-        .button-group { display: flex; gap: 10px; margin-bottom: 15px; }
+        .button-group { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
         .input-group { display: flex; gap: 10px; margin-bottom: 10px; }
 
         input[type="text"] { flex: 1; padding: 10px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; outline: none; }
@@ -23,6 +23,9 @@
         .btn-secondary { background-color: #607d8b; }
         .btn-success { background-color: #4caf50; }
 
+        .btn-gemini { background-color: #8e44ad; } 
+        .btn-ollama { background-color: #e67e22; }
+
         .output-area { background-color: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 6px; height: 250px; overflow-y: auto; font-family: monospace; white-space: pre-wrap; word-wrap: break-word; font-size: 14px; }
         .log-time { color: #888; font-size: 12px; margin-right: 8px; }
     </style>
@@ -31,16 +34,15 @@
     <div class="container">
         <h2>🤖 Fleet Brain Dashboard</h2>
 
-        <!-- Top Controls: Health & History -->
         <div class="section">
             <div class="button-group">
                 <button class="btn-success" onclick="checkHealth()">🏥 Health Check</button>
                 <button class="btn-secondary" onclick="fetchHistory()">📜 View History</button>
+                <button id="llmToggleBtn" class="btn-gemini" onclick="toggleLLM()">✨ Provider: Gemini</button>
                 <button class="btn-secondary" onclick="clearConsole()" style="margin-left: auto; background-color: #e53935;">🗑️ Clear</button>
             </div>
         </div>
 
-        <!-- Command Dispatcher & Scene Analyzer -->
         <div class="section">
             <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">Dispatch Command & Analyze Scene</label>
 
@@ -55,18 +57,16 @@
             <small style="color: #666; font-style: italic;">Select a local image to evaluate visual scene, or leave empty for Text-only Embedding.</small>
         </div>
 
-        <!-- Semantic Memory Search -->
         <div class="section">
             <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">🧠 Semantic Memory Search (Qdrant)</label>
             <div class="input-group">
                 <input type="text" id="searchInput" placeholder="e.g., 'Move to where the food is'...">
                 <input type="number" id="limitInput" value="3" min="1" max="10" title="Results limit">
-                <button class="btn-warning" onclick="searchMemory()">🔍 Search</button>
+                <button class="btn-warning" style="background-color: #ff9800;" onclick="searchMemory()">🔍 Search</button>
             </div>
             <small style="color: #666; font-style: italic;">Search for past commands by their mathematical meaning, not by exact words.</small>
         </div>
 
-        <!-- Console Output -->
         <div>
             <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">Terminal Output</label>
             <div id="outputBox" class="output-area">Waiting for actions...</div>
@@ -75,6 +75,7 @@
 
     <script>
         const outputBox = document.getElementById('outputBox');
+        let currentProvider = "gemini"; // Stato iniziale
 
         function logToConsole(message, data = null) {
             const now = new Date().toLocaleTimeString();
@@ -90,6 +91,42 @@
 
         function clearConsole() {
             outputBox.innerHTML = "Waiting for actions...";
+        }
+
+        // --- Nuova funzione per gestire il toggle dell'LLM ---
+        async function toggleLLM() {
+            // Inverti lo stato
+            currentProvider = currentProvider === "gemini" ? "ollama" : "gemini";
+            const btn = document.getElementById('llmToggleBtn');
+
+            // Aggiorna l'estetica del bottone
+            if (currentProvider === "gemini") {
+                btn.innerText = "✨ Provider: Gemini";
+                btn.className = "btn-gemini";
+            } else {
+                btn.innerText = "🦙 Provider: Ollama";
+                btn.className = "btn-ollama";
+            }
+
+            logToConsole(`⏳ Switching LLM provider to ${currentProvider.toUpperCase()}...`);
+
+            // Comunica al backend il cambio di stato
+            try {
+                const response = await fetch('/api/v1/llm-provider', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ provider: currentProvider })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    logToConsole(`✅ LLM Engine switched successfully:`, data);
+                } else {
+                    throw new Error("Backend non ha risposto correttamente");
+                }
+            } catch (error) {
+                logToConsole(`❌ Failed to switch LLM provider. Controlla che l'endpoint esista.`);
+            }
         }
 
         async function checkHealth() {
@@ -123,28 +160,19 @@
             if (!instruction) return;
 
             if (file) {
-                // Multimodal
                 logToConsole(`⏳ Uploading local file "${file.name}" and analyzing...`);
-
                 const formData = new FormData();
                 formData.append("instruction", instruction);
                 formData.append("image_file", file);
-
                 try {
-                    const response = await fetch('/api/v1/analyze-scene', {
-                        method: 'POST',
-                        body: formData
-                    });
-
+                    const response = await fetch('/api/v1/analyze-scene', { method: 'POST', body: formData });
                     const data = await response.json();
-                    logToConsole(`✅ Response from /analyze-scene:`, data);<!-- Console Output -->
+                    logToConsole(`✅ Response from /analyze-scene:`, data);
                 } catch (error) {
                     logToConsole(`❌ Failed to connect to /analyze-scene.`);
                 }
             } else {
-                // Text only
                 logToConsole(`⏳ Calling /command to generate text embedding...`);
-
                 const payload = { user_id: "dev_user", instruction: instruction };
                 try {
                     const response = await fetch('/api/v1/command', {
@@ -152,7 +180,6 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
                     });
-
                     const data = await response.json();
                     logToConsole(`✅ Response from /command:`, data);
                 } catch (error) {
@@ -164,29 +191,21 @@
         async function searchMemory() {
             const query = document.getElementById('searchInput').value;
             const limit = document.getElementById('limitInput').value;
-
             if (!query) return;
-
             logToConsole(`⏳ Searching Qdrant Memory for meaning of: "${query}"...`);
-
             const payload = { query: query, limit: parseInt(limit) };
-
             try {
                 const response = await fetch('/api/v1/search-memory', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-
                 const data = await response.json();
-
                 if (data.status === "success") {
-                    // Format output nicely to show scores
                     logToConsole(`🧠 Top Semantic Matches:`, data.matches);
                 } else {
                     logToConsole(`❌ Search Error:`, data);
                 }
-
             } catch (error) {
                 logToConsole(`❌ Failed to connect to /search-memory.`);
             }
