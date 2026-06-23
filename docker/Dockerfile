@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y \
     cmake \
     git \
     python3-pip \
+    python3-redis \
     libopencv-dev \
     python3-opencv \
     python3-colcon-common-extensions \
@@ -25,6 +26,8 @@ RUN apt-get update && apt-get install -y \
     libxinerama-dev \
     libwayland-dev \
     libxkbcommon-dev \
+    nlohmann-json3-dev \
+    redis-tools \
     && rm -rf /var/lib/apt/lists/*
 
 RUN git clone --depth 1 https://github.com/raysan5/raylib.git /tmp/raylib \
