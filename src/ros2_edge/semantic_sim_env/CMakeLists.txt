@@ -18,6 +18,7 @@ find_package(cv_bridge REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(image_transport REQUIRED)
 find_package(PkgConfig REQUIRED)
+find_package(nlohmann_json REQUIRED)
 
 pkg_check_modules(RAYLIB REQUIRED raylib)
 
@@ -30,6 +31,7 @@ ament_target_dependencies(simulator_node
   nav_msgs
   cv_bridge
   image_transport
+  nlohmann_json
 )
 
 target_link_libraries(simulator_node

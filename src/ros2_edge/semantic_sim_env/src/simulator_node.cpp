@@ -1,4 +1,6 @@
 #include "raylib.h"
+#include "raymath.h"
+#include "rlgl.h"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/image.hpp"
 #include "geometry_msgs/msg/twist.hpp"
@@ -6,8 +8,27 @@
 #include "image_transport/image_transport.hpp"
 #include <cv_bridge/cv_bridge.hpp>
 #include <opencv2/opencv.hpp>
+#include <nlohmann/json.hpp>
+#include <fstream>
 #include <cmath>
 #include <algorithm>
+#include <vector>
+
+// Semantic map structures
+struct SimWall {
+    std::string name;
+    Vector3 position;
+    Vector3 size;
+    Color color;
+};
+
+struct SimObject {
+    std::string name;
+    std::string shape;
+    Vector3 position;
+    float size;
+    Color color;
+};
 
 class SimulatorNode : public rclcpp::Node {
 public:
@@ -21,6 +42,9 @@ public:
         vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
             "/cmd_vel", 10, std::bind(&SimulatorNode::cmd_vel_callback, this, std::placeholders::_1));
 
+        // Load world definition from JSON
+        load_world("/workspace/world_config.json");
+
         if (is_headless_) {
             SetConfigFlags(FLAG_WINDOW_HIDDEN);
             RCLCPP_INFO(this->get_logger(), "Starting simulator in HEADLESS mode...");
@@ -28,18 +52,20 @@ public:
 
         InitWindow(640, 480, "Semantic Fleet Brain - Simulator");
 
-        camera_external_.position = Vector3{ 10.0f, 10.0f, 10.0f };
+        // External static camera setup
+        camera_external_.position = Vector3{ 10.0f, 15.0f, 10.0f };
         camera_external_.target = Vector3{ 0.0f, 0.0f, 0.0f };
         camera_external_.up = Vector3{ 0.0f, 1.0f, 0.0f };
         camera_external_.fovy = 45.0f;
         camera_external_.projection = CAMERA_PERSPECTIVE;
 
+        // FPV (First Person View) camera setup
         camera_fpv_ = camera_external_;
         camera_fpv_.fovy = 90.0f;
 
         SetTargetFPS(30); 
 
-        RCLCPP_INFO(this->get_logger(), "Simulator started");
+        RCLCPP_INFO(this->get_logger(), "Simulator started with full 6DOF support");
     }
 
     ~SimulatorNode() {
@@ -47,33 +73,40 @@ public:
     }
 
     void update() {
+        // Toggle camera mode with 'C' key
         if (IsKeyPressed(KEY_C)) {
             use_fpv_ = !use_fpv_;
         }
 
         dt_ = GetFrameTime(); 
 
-        drone_yaw_ += cmd_yaw_rate_ * dt_;
-        float dx = (cmd_vel_x_ * cos(drone_yaw_) - cmd_vel_y_ * sin(drone_yaw_)) * dt_;
-        float dz = -(cmd_vel_x_ * sin(drone_yaw_) + cmd_vel_y_ * cos(drone_yaw_)) * dt_;
+        // Update 6DOF rotation states
+        drone_roll_  += cmd_roll_rate_ * dt_;
+        drone_pitch_ += cmd_pitch_rate_ * dt_;
+        drone_yaw_   += cmd_yaw_rate_ * dt_;
 
-        drone_pos_.x += dx;
-        drone_pos_.z += dz;
+        // Calculate local rotation axes
+        Matrix rot = MatrixIdentity();
+        rot = MatrixMultiply(rot, MatrixRotateX(drone_roll_));   
+        rot = MatrixMultiply(rot, MatrixRotateZ(drone_pitch_));  
+        rot = MatrixMultiply(rot, MatrixRotateY(drone_yaw_));    
 
-        Vector3 nose_pos = {
-            drone_pos_.x + 0.6f * cos(drone_yaw_),
-            drone_pos_.y,
-            drone_pos_.z - 0.6f * sin(drone_yaw_)
-        };
+        Vector3 forward = Vector3Transform(Vector3{1.0f, 0.0f, 0.0f}, rot);
+        Vector3 up      = Vector3Transform(Vector3{0.0f, 1.0f, 0.0f}, rot);
+        Vector3 left    = Vector3Transform(Vector3{0.0f, 0.0f, -1.0f}, rot); 
 
+        // Update 3D position based on velocity commands
+        drone_pos_ = Vector3Add(drone_pos_, Vector3Scale(forward, cmd_vel_x_ * dt_));
+        drone_pos_ = Vector3Add(drone_pos_, Vector3Scale(left, cmd_vel_y_ * dt_));
+        drone_pos_ = Vector3Add(drone_pos_, Vector3Scale(up, cmd_vel_z_ * dt_));
+
+        // Update FPV camera position to follow the drone nose
         if (use_fpv_) {
-            camera_fpv_.position = nose_pos;
-            camera_fpv_.target = {
-                nose_pos.x + cos(drone_yaw_),
-                nose_pos.y,
-                nose_pos.z - sin(drone_yaw_)
-            };
+            camera_fpv_.position = Vector3Add(drone_pos_, Vector3Scale(forward, 0.6f));
+            camera_fpv_.target = Vector3Add(camera_fpv_.position, forward);
+            camera_fpv_.up = up; 
         } else {
+            // Free camera manual controls
             float rot_speed = 1.5f * dt_;
             float move_speed = 8.0f * dt_;
 
@@ -84,56 +117,99 @@ public:
 
             ext_cam_pitch_ = std::max(-1.5f, std::min(1.5f, ext_cam_pitch_));
 
-            Vector3 forward = {
+            Vector3 cam_forward = {
                 cosf(ext_cam_pitch_) * cosf(ext_cam_yaw_),
                 sinf(ext_cam_pitch_),
                 cosf(ext_cam_pitch_) * sinf(ext_cam_yaw_)
             };
 
-            Vector3 right = {
-                -sinf(ext_cam_yaw_),
-                0.0f,
-                cosf(ext_cam_yaw_)
-            };
+            Vector3 cam_right = { -sinf(ext_cam_yaw_), 0.0f, cosf(ext_cam_yaw_) };
 
-            if (IsKeyDown(KEY_W)) {
-                camera_external_.position.x += forward.x * move_speed;
-                camera_external_.position.y += forward.y * move_speed;
-                camera_external_.position.z += forward.z * move_speed;
-            }
-            if (IsKeyDown(KEY_S)) {
-                camera_external_.position.x -= forward.x * move_speed;
-                camera_external_.position.y -= forward.y * move_speed;
-                camera_external_.position.z -= forward.z * move_speed;
-            }
-            if (IsKeyDown(KEY_D)) {
-                camera_external_.position.x += right.x * move_speed;
-                camera_external_.position.y += right.y * move_speed;
-                camera_external_.position.z += right.z * move_speed;
-            }
-            if (IsKeyDown(KEY_A)) {
-                camera_external_.position.x -= right.x * move_speed;
-                camera_external_.position.y -= right.y * move_speed;
-                camera_external_.position.z -= right.z * move_speed;
-            }
+            if (IsKeyDown(KEY_W)) camera_external_.position = Vector3Add(camera_external_.position, Vector3Scale(cam_forward, move_speed));
+            if (IsKeyDown(KEY_S)) camera_external_.position = Vector3Subtract(camera_external_.position, Vector3Scale(cam_forward, move_speed));
+            if (IsKeyDown(KEY_D)) camera_external_.position = Vector3Add(camera_external_.position, Vector3Scale(cam_right, move_speed));
+            if (IsKeyDown(KEY_A)) camera_external_.position = Vector3Subtract(camera_external_.position, Vector3Scale(cam_right, move_speed));
 
-            camera_external_.target.x = camera_external_.position.x + forward.x;
-            camera_external_.target.y = camera_external_.position.y + forward.y;
-            camera_external_.target.z = camera_external_.position.z + forward.z;
+            camera_external_.target = Vector3Add(camera_external_.position, cam_forward);
         }
 
         Camera3D active_camera = use_fpv_ ? camera_fpv_ : camera_external_;
 
         BeginDrawing();
-            ClearBackground(SKYBLUE); 
+            ClearBackground(Color{240, 240, 240, 255}); 
 
             BeginMode3D(active_camera);
-                DrawGrid(20, 1.0f);
-                DrawCube(Vector3{5.0f, 0.0f, 5.0f}, 2.0f, 2.0f, 2.0f, RED); 
-                DrawCube(drone_pos_, 1.0f, 1.0f, 1.0f, BLUE); 
-                DrawCube(nose_pos, 0.4f, 0.4f, 0.4f, YELLOW); 
+                // Draw floor plane and grid
+                DrawPlane(Vector3{0.0f, -0.01f, 0.0f}, Vector2{50.0f, 50.0f}, Color{160, 160, 160, 255}); 
+                DrawGrid(50, 1.0f); 
+
+                // Draw walls
+                for (const auto& wall : walls_) {
+                    DrawCube(wall.position, wall.size.x, wall.size.y, wall.size.z, wall.color);
+                    DrawCubeWires(wall.position, wall.size.x, wall.size.y, wall.size.z, BLACK);
+                }
+
+                // Draw semantic objects
+                for (const auto& obj : objects_) {
+                    if (obj.shape == "cube") {
+                        DrawCube(obj.position, obj.size, obj.size, obj.size, obj.color);
+                        DrawCubeWires(obj.position, obj.size, obj.size, obj.size, BLACK);
+                    } else if (obj.shape == "sphere") {
+                        DrawSphere(obj.position, obj.size / 2.0f, obj.color);
+                        DrawSphereWires(obj.position, obj.size / 2.0f, 16, 16, BLACK);
+                    } else if (obj.shape == "cylinder") {
+                        DrawCylinder(obj.position, obj.size / 2.0f, obj.size / 2.0f, obj.size, 16, obj.color);
+                        DrawCylinderWires(obj.position, obj.size / 2.0f, obj.size / 2.0f, obj.size, 16, BLACK);
+                    } else if (obj.shape == "pyramid") {
+                        DrawCylinder(obj.position, 0.0f, obj.size / 2.0f, obj.size, 4, obj.color);
+                        DrawCylinderWires(obj.position, 0.0f, obj.size / 2.0f, obj.size, 4, BLACK);
+                    } else if (obj.shape == "parallelepiped") {
+                        DrawCube(obj.position, obj.size * 1.5f, obj.size, obj.size * 0.5f, obj.color);
+                        DrawCubeWires(obj.position, obj.size * 1.5f, obj.size, obj.size * 0.5f, BLACK);
+                    }
+                }
+
+                // Draw drone with 6DOF orientation
+                rlPushMatrix();
+                    rlTranslatef(drone_pos_.x, drone_pos_.y, drone_pos_.z);
+                    rlRotatef(drone_yaw_ * RAD2DEG, 0, 1, 0);
+                    rlRotatef(drone_pitch_ * RAD2DEG, 0, 0, 1);
+                    rlRotatef(drone_roll_ * RAD2DEG, 1, 0, 0);
+
+                    // Drone body
+                    DrawCube(Vector3{0.0f, 0.0f, 0.0f}, 0.15f, 0.04f, 0.15f, GREEN);
+                    DrawCubeWires(Vector3{0.0f, 0.0f, 0.0f}, 0.15f, 0.04f, 0.15f, BLACK);
+
+                    // Arms configuration
+                    rlPushMatrix();
+                        rlRotatef(45.0f, 0, 1, 0);
+                        DrawCube(Vector3{0.0f, 0.0f, 0.0f}, 0.4f, 0.015f, 0.015f, GRAY);
+                        DrawCube(Vector3{0.0f, 0.0f, 0.0f}, 0.015f, 0.015f, 0.4f, GRAY);
+                    rlPopMatrix();
+
+                    float arm_d = 0.1414f;
+                    float prop_y = 0.03f;
+                    float p_rad = 0.08f;
+
+                    // Motors
+                    DrawCylinder(Vector3{arm_d, 0.01f, -arm_d}, 0.015f, 0.015f, 0.03f, 8, BLACK);
+                    DrawCylinder(Vector3{arm_d, 0.01f, arm_d}, 0.015f, 0.015f, 0.03f, 8, BLACK);
+                    DrawCylinder(Vector3{-arm_d, 0.01f, -arm_d}, 0.015f, 0.015f, 0.03f, 8, BLACK);
+                    DrawCylinder(Vector3{-arm_d, 0.01f, arm_d}, 0.015f, 0.015f, 0.03f, 8, BLACK);
+
+                    // Propellers visualization
+                    DrawCylinder(Vector3{arm_d, prop_y, -arm_d}, p_rad, p_rad, 0.005f, 16, ColorAlpha(RED, 0.7f));
+                    DrawCylinder(Vector3{arm_d, prop_y, arm_d}, p_rad, p_rad, 0.005f, 16, ColorAlpha(RED, 0.7f));
+                    DrawCylinder(Vector3{-arm_d, prop_y, -arm_d}, p_rad, p_rad, 0.005f, 16, ColorAlpha(DARKGRAY, 0.7f));
+                    DrawCylinder(Vector3{-arm_d, prop_y, arm_d}, p_rad, p_rad, 0.005f, 16, ColorAlpha(DARKGRAY, 0.7f));
+
+                    // FPV Camera lens
+                    DrawCube(Vector3{0.08f, -0.01f, 0.0f}, 0.04f, 0.03f, 0.03f, BLACK);
+                    DrawSphere(Vector3{0.10f, -0.01f, 0.0f}, 0.012f, BLUE);
+                rlPopMatrix();
             EndMode3D();
 
+            // UI Overlay
             if (use_fpv_) {
                 DrawText("MODE: FPV (Drone Nose)", 10, 10, 20, DARKGREEN);
             } else {
@@ -142,7 +218,8 @@ public:
             }
 
             DrawText("Press 'C' to toggle camera", 10, 55, 10, DARKGRAY);
-            DrawText(TextFormat("X: %.2f | Z: %.2f | Yaw: %.2f", drone_pos_.x, drone_pos_.z, drone_yaw_), 10, 75, 15, RED);
+            DrawText(TextFormat("Alt: %.2f | XYZ: (%.1f, %.1f, %.1f)", drone_pos_.y, drone_pos_.x, drone_pos_.y, drone_pos_.z), 10, 75, 15, RED);
+            DrawText(TextFormat("Walls: %lu | Objects: %lu", walls_.size(), objects_.size()), 10, 95, 15, BLACK);
         EndDrawing();
 
         publish_image();
@@ -150,22 +227,75 @@ public:
     }
 
 private:
+    Color parse_color(const nlohmann::json& j_color) {
+        return Color{
+            j_color[0].get<unsigned char>(),
+            j_color[1].get<unsigned char>(),
+            j_color[2].get<unsigned char>(),
+            j_color[3].get<unsigned char>()
+        };
+    }
+
+    void load_world(const std::string& filepath) {
+        std::ifstream file(filepath);
+        if (!file.is_open()) {
+            RCLCPP_WARN(this->get_logger(), "Could not open %s. Starting with empty world.", filepath.c_str());
+            return;
+        }
+
+        nlohmann::json j;
+        try {
+            file >> j;
+        } catch (const nlohmann::json::parse_error& e) {
+            RCLCPP_ERROR(this->get_logger(), "JSON parsing error: %s", e.what());
+            return;
+        }
+
+        if (j.contains("walls")) {
+            for (const auto& w : j["walls"]) {
+                SimWall wall;
+                wall.name = w["name"];
+                float forced_height = 3.0f;
+                float center_y = forced_height / 2.0f;
+                wall.size = Vector3{w["width"].get<float>(), forced_height, w["depth"].get<float>()};
+                wall.position = Vector3{w["x"].get<float>(), center_y, w["z"].get<float>()};
+                wall.color = parse_color(w["color"]);
+                walls_.push_back(wall);
+            }
+        }
+
+        if (j.contains("objects")) {
+            for (const auto& o : j["objects"]) {
+                SimObject obj;
+                obj.name = o["name"];
+                obj.shape = o["shape"];
+                obj.size = o["size"];
+                obj.position = Vector3{o["x"].get<float>(), o["y"].get<float>(), o["z"].get<float>()};
+                obj.color = parse_color(o["color"]);
+                objects_.push_back(obj);
+            }
+        }
+
+        RCLCPP_INFO(this->get_logger(), "World loaded: %lu walls, %lu objects.", walls_.size(), objects_.size());
+    }
+
     void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg) {
         cmd_vel_x_ = msg->linear.x;
         cmd_vel_y_ = msg->linear.y;
+        cmd_vel_z_ = msg->linear.z;
+        cmd_roll_rate_ = msg->angular.x;
+        cmd_pitch_rate_ = msg->angular.y;
         cmd_yaw_rate_ = msg->angular.z;
     }
 
     void publish_image() {
         Image img = LoadImageFromScreen();
-
         cv::Mat mat(img.height, img.width, CV_8UC4, img.data);
         cv::Mat mat_bgr;
         cv::cvtColor(mat, mat_bgr, cv::COLOR_RGBA2BGR);
 
         auto msg = cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", mat_bgr).toImageMsg();
         image_pub_.publish(*msg);
-
         UnloadImage(img); 
     }
 
@@ -179,15 +309,23 @@ private:
         odom_msg.pose.pose.position.y = -drone_pos_.z; 
         odom_msg.pose.pose.position.z = drone_pos_.y;
 
-        double half_yaw = -drone_yaw_ * 0.5;
-        odom_msg.pose.pose.orientation.x = 0.0;
-        odom_msg.pose.pose.orientation.y = 0.0;
-        odom_msg.pose.pose.orientation.z = std::sin(half_yaw);
-        odom_msg.pose.pose.orientation.w = std::cos(half_yaw);
+        double r = drone_roll_, p = -drone_pitch_, y = drone_yaw_;
+        double cr = cos(r * 0.5), sr = sin(r * 0.5);
+        double cp = cos(p * 0.5), sp = sin(p * 0.5);
+        double cy = cos(y * 0.5), sy = sin(y * 0.5);
+
+        odom_msg.pose.pose.orientation.w = cr * cp * cy + sr * sp * sy;
+        odom_msg.pose.pose.orientation.x = sr * cp * cy - cr * sp * sy;
+        odom_msg.pose.pose.orientation.y = cr * sp * cy + sr * sp * sy;
+        odom_msg.pose.pose.orientation.z = cr * cp * sy - sr * sp * cy;
 
         odom_msg.twist.twist.linear.x = cmd_vel_x_;
         odom_msg.twist.twist.linear.y = cmd_vel_y_;
+        odom_msg.twist.twist.linear.z = cmd_vel_z_;
+        odom_msg.twist.twist.angular.x = cmd_roll_rate_;
+        odom_msg.twist.twist.angular.y = cmd_pitch_rate_;
         odom_msg.twist.twist.angular.z = cmd_yaw_rate_;
+
         odom_pub_->publish(odom_msg);
     }
 
@@ -202,13 +340,16 @@ private:
     float ext_cam_yaw_ = -2.356f;
     float ext_cam_pitch_ = -0.615f;
 
-    Vector3 drone_pos_{0.0f, 0.5f, 0.0f};
-    float drone_yaw_ = 0.0f;
-    float cmd_vel_x_ = 0.0f;
-    float cmd_vel_y_ = 0.0f;
-    float cmd_yaw_rate_ = 0.0f;
+    Vector3 drone_pos_{0.0f, 0.5f, 0.0f}; 
+    float drone_roll_ = 0.0f, drone_pitch_ = 0.0f, drone_yaw_ = 0.0f;
+    float cmd_vel_x_ = 0.0f, cmd_vel_y_ = 0.0f, cmd_vel_z_ = 0.0f;
+    float cmd_roll_rate_ = 0.0f, cmd_pitch_rate_ = 0.0f, cmd_yaw_rate_ = 0.0f;
+
     float dt_;
     bool is_headless_;
+
+    std::vector<SimWall> walls_;
+    std::vector<SimObject> objects_;
 };
 
 int main(int argc, char * argv[]) {
