@@ -1,5 +1,6 @@
 import asyncio
 import asyncpg
+import base64
 import os, logging, json, uuid
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
@@ -84,6 +85,18 @@ async def lifespan(app: FastAPI):
 
     # 1. Initialize Qdrant Client
     state.qdrant_client = QdrantClient(host="localhost", port=6333)
+    try:
+        logger.info("🧹 Resetting Qdrant collection 'semantic_memory'...")
+        state.qdrant_client.recreate_collection(
+            collection_name="semantic_memory",
+            vectors_config=models.VectorParams(
+                size=512,
+                distance=models.Distance.COSINE
+            )
+        )
+        logger.info("Qdrant collection reset successfully.")
+    except Exception as e:
+        logger.error(f"Error resetting Qdrant: {e}")
 
     # 1.5 Initialize Gemini Client
     if os.getenv("GEMINI_API_KEY"):
@@ -158,12 +171,21 @@ async def lifespan(app: FastAPI):
         # Test the connection with a ping
         await state.redis_client.ping()
         logger.info("Redis connected successfully!")
+
+        await state.redis_client.delete("semantic_memory_queue")
+        logger.info("🧹 Semantic memory queue cleared at startup.")
     except Exception as e:
         logger.error(f"Redis connection failed: {e}")
+
+    # 5. Start Background Workers
+    state.memory_worker_task = asyncio.create_task(semantic_memory_worker())
 
     yield
 
     logger.info("Shutting down API: Cleaning up...")
+
+    if hasattr(state, "memory_worker_task"):
+        state.memory_worker_task.cancel()
 
     # Teardown: Close Qdrant
     if state.qdrant_client and hasattr(state.qdrant_client, "close"):
@@ -319,6 +341,80 @@ def get_embedding(text: str):
         )
         return output.pooler_output.detach().cpu().reshape(-1).tolist()
 
+async def semantic_memory_worker():
+    """Loops to listen to the Redis queue, vectorizes images, and saves them to Qdrant."""
+    logger.info("🧠 Semantic Memory Worker started in background.")
+
+    # Create the folder to save the physical images (if it doesn't exist)
+    img_folder = os.path.join(os.path.dirname(__file__), "memory", "images")
+    os.makedirs(img_folder, exist_ok=True)
+
+    while True:
+        try:
+            # 1. Pop the payload from Redis (blpop blocks until a message is available)
+            # Note: blpop on aioredis returns a tuple (queue_name, value)
+            result = await state.redis_client.blpop("semantic_memory_queue", timeout=1)
+
+            if not result:
+                continue # No message, restart the loop
+
+            _, task_data = result
+            data = json.loads(task_data)
+
+            # 2. Extract data from the payload
+            x, y, z, yaw = data["x"], data["y"], data["z"], data["yaw"]
+            b64_image = data["image"]
+            timestamp = data["timestamp"]
+
+            # 3. Base64 decoding and saving to disk
+            img_data = base64.b64decode(b64_image)
+            image = Image.open(BytesIO(img_data)).convert("RGB")
+
+            img_filename = f"discovery_{int(timestamp)}.jpg"
+            img_path = os.path.join(img_folder, img_filename)
+            image.save(img_path)
+
+            # 4. CLIP Inference: Turning the image into a Vector!
+            processor = state.ml_models["clip_processor"]
+            model = state.ml_models["clip_model"]
+
+            inputs = processor(images=image, return_tensors="pt")
+            inputs = {k: v.to(state.device) for k, v in inputs.items()}
+
+            with torch.no_grad():
+                image_features = model.get_image_features(**inputs)
+                # Normalize the 512-dimensional vector and convert it to a list
+                embedding_vector = F.normalize(image_features, p=2, dim=-1).squeeze().tolist()
+
+            # 5. Save to Qdrant (Long-Term Memory)
+            point_id = str(uuid.uuid4())
+            state.qdrant_client.upsert(
+                collection_name="semantic_memory",
+                points=[
+                    models.PointStruct(
+                        id=point_id,
+                        vector=embedding_vector,
+                        payload={
+                            "type": "visual_discovery",
+                            "x": x,
+                            "y": y,
+                            "z": z,
+                            "yaw": yaw,
+                            "image_path": img_path, # Just the path, not the bytes!
+                            "timestamp": timestamp
+                        }
+                    )
+                ]
+            )
+            logger.info(f"🌟 New discovery stored! Object vectorized at coordinates: ({x}, {y}, {z})")
+
+        except asyncio.CancelledError:
+            logger.info("Semantic Memory Worker shutting down.")
+            break
+        except Exception as e:
+            logger.error(f"Error processing visual memory: {e}")
+            await asyncio.sleep(2) # Avoid infinite loops in case of persistent errors
+
 # --- ENDPOINTS ---
 @app.get("/", response_class=HTMLResponse)
 async def frontend(request: Request):
@@ -414,6 +510,42 @@ async def dispatch_command(payload: CommandRequest):
             logger.info(f"Agent plan generated via {state.llm_provider}: {agent_plan}")
         except Exception as llm_err:
             logger.error(f"Error during reasoning: {llm_err}")
+
+        # if agent_plan and state.qdrant_client:
+        #     for step in agent_plan:
+        #         action = step.get("action")
+        #         target = step.get("target", "")
+
+        #         # 1. RESOLUTION ONLY FOR NAVIGATE (if it has a specific target)
+        #         # Exclude generic targets or pure exploratory movement commands
+        #         generic_targets = ["unoccupied space", "room boundaries", "environment", "area"]
+
+        #         if action == "NAVIGATE" and target.lower() not in generic_targets:
+        #             logger.info(f"🔍 Spatial resolution for NAVIGATE towards: '{target}'...")
+
+        #             target_vector = get_embedding(target)
+
+        #             # Filter ONLY visual discoveries, ignoring past commands
+        #             search_result = state.qdrant_client.query_points(
+        #                 collection_name="semantic_memory",
+        #                 query=target_vector,
+        #                 limit=1,
+        #                 query_filter=models.Filter(
+        #                     must=[models.FieldCondition(key="type", match=models.MatchValue(value="visual_discovery"))]
+        #                 )
+        #             ).points
+
+        #             if search_result and search_result[0].score > 0.23: 
+        #                 best_match = search_result[0].payload
+        #                 step["explicit_goal"] = [best_match["x"], best_match["y"], best_match["z"]]
+        #                 logger.info(f"🎯 Destination found: {step['explicit_goal']}")
+        #             else:
+        #                 logger.info(f"ℹ️ No known coordinates for '{target}'. The drone will proceed with blind/exploratory navigation.")
+
+        #         # 2. OTHER ACTIONS (SEARCH, COMMUNICATE, etc.)
+        #         # Pass them through as is, without injecting coordinates
+        #         else:
+        #             logger.info(f"⏩ Action '{action}' towards '{target}' ignored by the resolver (does not require fixed coordinates).")
 
         # 4. Queing task on Redis (Publisher)
         if agent_plan and state.redis_client:
