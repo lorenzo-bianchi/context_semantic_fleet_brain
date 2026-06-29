@@ -76,6 +76,13 @@ class RedisBridgeNode(Node):
             "red box": {"x": 5.0, "y": 3.0, "z": 1.5, "yaw": 1.57}
         }
 
+        self.exploration_waypoints = [
+            (2.0, 2.0, 1.5),
+            (2.0, -2.0, 1.5),
+            (-2.0, -2.0, 1.5),
+            (-2.0, 2.0, 1.5)
+        ]
+
         self.timer = self.create_timer(0.5, self.poll_queue, callback_group=self.control_cb_group)
 
     def euler_from_quaternion(self, x, y, z, w):
@@ -253,17 +260,23 @@ class RedisBridgeNode(Node):
         self.cmd_vel_pub.publish(msg)
         self.get_logger().info(f"        ✅ [Vision] Scan completed.")
 
+    def handle_return_home(self):
+        self.get_logger().info("        🏠 Returning to Home Base (0, 0, 1.5)...")
+        home_waypoint = (0.0, 0.0, 1.5)
+        self.handle_navigate("Home Base", explicit_goal=home_waypoint)
+        self.get_logger().info("        ✅ Safely returned home.")
+
     def handle_explore(self):
-        self.get_logger().info("        🗺️ Initiating Autonomous Exploration...")
+        self.get_logger().info("        🗺️ Initiating Systematic Exploration Plan...")
 
-        rand_x = random.uniform(-4.0, 4.0)
-        rand_y = random.uniform(-4.0, 4.0)
-        flight_altitude = 1.5
+        for i, waypoint in enumerate(self.exploration_waypoints):
+            self.get_logger().info(f"        🧭 Moving to waypoint {i+1}/{len(self.exploration_waypoints)}: {waypoint}")
+            self.handle_navigate(f"Waypoint {i+1}", explicit_goal=waypoint)
+            self.handle_search("environment")
+            time.sleep(1.0)
 
-        waypoint = (rand_x, rand_y, flight_altitude)
-
-        self.handle_navigate("Unknown Area", explicit_goal=waypoint)
-        self.handle_search("environment")
+        self.handle_return_home()
+        self.get_logger().info("        ✅ Systematic exploration completed.")
 
 def main(args=None):
     rclpy.init(args=args)
