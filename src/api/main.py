@@ -236,9 +236,13 @@ async def get_agent_plan(instruction: str):
     # --- 1. Object-Based Prompting (The industry standard for LLMs) ---
     prompt = f"""You are the 'Fleet Brain', the AI of a ROS 2 robot.
     Analyze the following command and extract the FULL sequence of operations.
-    Allowed actions: NAVIGATE, SEARCH, PICK, DROP, COMMUNICATE.
+    Allowed actions: EXPLORE, NAVIGATE, SEARCH, PICK, DROP, COMMUNICATE.
 
     Command: "{instruction}"
+
+    CRITICAL RULES:
+    1. If the user asks to "explore", "map", or "scan" the area, you MUST output a single EXPLORE action. Do NOT use NAVIGATE for general exploration.
+    2. NAVIGATE is strictly for going to a specific known object or room.
 
     You MUST respond with a JSON object containing a SINGLE key called "plan". 
     The value must be the array of all actions required. Do not stop until all steps are extracted.
@@ -250,6 +254,29 @@ async def get_agent_plan(instruction: str):
         {{"action": "SEARCH", "target": "bottle"}},
         {{"action": "PICK", "target": "bottle"}},
         {{"action": "COMMUNICATE", "target": "everyone about the bottle"}}
+      ]
+    }}
+
+    EXAMPLES:
+    Command: "Go to the red box"
+    {{
+      "plan": [
+        {{"action": "NAVIGATE", "target": "red box"}}
+      ]
+    }}
+
+    Command: "Explore the room"
+    {{
+      "plan": [
+        {{"action": "EXPLORE", "target": "room"}}
+      ]
+    }}
+
+    Command: "Find the green pyramid"
+    {{
+      "plan": [
+        {{"action": "NAVIGATE", "target": "green pyramid"}},
+        {{"action": "SEARCH", "target": "green pyramid"}}
       ]
     }}
 
@@ -335,11 +362,10 @@ def get_embedding(text: str):
     inputs = {k: v.to(state.device) for k, v in inputs.items() if v is not None}
 
     with torch.no_grad():
-        output = model.text_model(
-            input_ids=inputs["input_ids"],
-            attention_mask=inputs["attention_mask"]
-        )
-        return output.pooler_output.detach().cpu().reshape(-1).tolist()
+        outputs = model.text_model(**inputs)
+        pooled_output = outputs.pooler_output
+        text_embeds = model.text_projection(pooled_output)
+        return F.normalize(text_embeds, p=2, dim=-1).squeeze().tolist()
 
 async def semantic_memory_worker():
     """Loops to listen to the Redis queue, vectorizes images, and saves them to Qdrant."""
@@ -351,15 +377,18 @@ async def semantic_memory_worker():
 
     while True:
         try:
-            # 1. Pop the payload from Redis (blpop blocks until a message is available)
-            # Note: blpop on aioredis returns a tuple (queue_name, value)
+            # 1. Pop the payload from Redis
             result = await state.redis_client.blpop("semantic_memory_queue", timeout=1)
 
             if not result:
-                continue # No message, restart the loop
+                continue
 
             _, task_data = result
             data = json.loads(task_data)
+
+            if "image" not in data:
+                logger.warning("Received payload without image. Ignoring.")
+                continue
 
             # 2. Extract data from the payload
             x, y, z, yaw = data["x"], data["y"], data["z"], data["yaw"]
@@ -374,7 +403,7 @@ async def semantic_memory_worker():
             img_path = os.path.join(img_folder, img_filename)
             image.save(img_path)
 
-            # 4. CLIP Inference: Turning the image into a Vector!
+            # 4. CLIP Inference: Turning the image into a Vector
             processor = state.ml_models["clip_processor"]
             model = state.ml_models["clip_model"]
 
@@ -382,11 +411,12 @@ async def semantic_memory_worker():
             inputs = {k: v.to(state.device) for k, v in inputs.items()}
 
             with torch.no_grad():
-                image_features = model.get_image_features(**inputs)
-                # Normalize the 512-dimensional vector and convert it to a list
-                embedding_vector = F.normalize(image_features, p=2, dim=-1).squeeze().tolist()
+                vision_outputs = model.vision_model(**inputs)
+                raw_tensor = vision_outputs.pooler_output
+                projected_tensor = model.visual_projection(raw_tensor)
+                embedding_vector = F.normalize(projected_tensor, p=2, dim=-1).squeeze().tolist()
 
-            # 5. Save to Qdrant (Long-Term Memory)
+            # 5. Save to Qdrant
             point_id = str(uuid.uuid4())
             state.qdrant_client.upsert(
                 collection_name="semantic_memory",
@@ -400,7 +430,7 @@ async def semantic_memory_worker():
                             "y": y,
                             "z": z,
                             "yaw": yaw,
-                            "image_path": img_path, # Just the path, not the bytes!
+                            "image_path": img_path,
                             "timestamp": timestamp
                         }
                     )
@@ -412,8 +442,8 @@ async def semantic_memory_worker():
             logger.info("Semantic Memory Worker shutting down.")
             break
         except Exception as e:
-            logger.error(f"Error processing visual memory: {e}")
-            await asyncio.sleep(2) # Avoid infinite loops in case of persistent errors
+            logger.error(f"Error processing visual memory: {type(e).__name__} - {e}")
+            await asyncio.sleep(2)
 
 # --- ENDPOINTS ---
 @app.get("/", response_class=HTMLResponse)
@@ -511,41 +541,41 @@ async def dispatch_command(payload: CommandRequest):
         except Exception as llm_err:
             logger.error(f"Error during reasoning: {llm_err}")
 
-        # if agent_plan and state.qdrant_client:
-        #     for step in agent_plan:
-        #         action = step.get("action")
-        #         target = step.get("target", "")
+        if agent_plan and state.qdrant_client:
+            for step in agent_plan:
+                action = step.get("action")
+                target = step.get("target", "")
 
-        #         # 1. RESOLUTION ONLY FOR NAVIGATE (if it has a specific target)
-        #         # Exclude generic targets or pure exploratory movement commands
-        #         generic_targets = ["unoccupied space", "room boundaries", "environment", "area"]
+                # 1. RESOLUTION ONLY FOR NAVIGATE (if it has a specific target)
+                # Exclude generic targets or pure exploratory movement commands
+                generic_targets = ["unoccupied space", "room boundaries", "environment", "area"]
 
-        #         if action == "NAVIGATE" and target.lower() not in generic_targets:
-        #             logger.info(f"🔍 Spatial resolution for NAVIGATE towards: '{target}'...")
+                if action == "NAVIGATE" and target.lower() not in generic_targets:
+                    logger.info(f"🔍 Spatial resolution for NAVIGATE towards: '{target}'...")
 
-        #             target_vector = get_embedding(target)
+                    target_vector = get_embedding(target)
 
-        #             # Filter ONLY visual discoveries, ignoring past commands
-        #             search_result = state.qdrant_client.query_points(
-        #                 collection_name="semantic_memory",
-        #                 query=target_vector,
-        #                 limit=1,
-        #                 query_filter=models.Filter(
-        #                     must=[models.FieldCondition(key="type", match=models.MatchValue(value="visual_discovery"))]
-        #                 )
-        #             ).points
+                    # Filter ONLY visual discoveries, ignoring past commands
+                    search_result = state.qdrant_client.query_points(
+                        collection_name="semantic_memory",
+                        query=target_vector,
+                        limit=1,
+                        query_filter=models.Filter(
+                            must=[models.FieldCondition(key="type", match=models.MatchValue(value="visual_discovery"))]
+                        )
+                    ).points
 
-        #             if search_result and search_result[0].score > 0.23: 
-        #                 best_match = search_result[0].payload
-        #                 step["explicit_goal"] = [best_match["x"], best_match["y"], best_match["z"]]
-        #                 logger.info(f"🎯 Destination found: {step['explicit_goal']}")
-        #             else:
-        #                 logger.info(f"ℹ️ No known coordinates for '{target}'. The drone will proceed with blind/exploratory navigation.")
+                    if search_result and search_result[0].score > 0.23:
+                        best_match = search_result[0].payload
+                        step["explicit_goal"] = [best_match["x"], best_match["y"], best_match["z"]]
+                        logger.info(f"🎯 Destination found: {step['explicit_goal']}")
+                    else:
+                        logger.info(f"ℹ️ No known coordinates for '{target}'. The drone will proceed with blind/exploratory navigation.")
 
-        #         # 2. OTHER ACTIONS (SEARCH, COMMUNICATE, etc.)
-        #         # Pass them through as is, without injecting coordinates
-        #         else:
-        #             logger.info(f"⏩ Action '{action}' towards '{target}' ignored by the resolver (does not require fixed coordinates).")
+                # 2. OTHER ACTIONS (SEARCH, COMMUNICATE, etc.)
+                # Pass them through as is, without injecting coordinates
+                else:
+                    logger.info(f"⏩ Action '{action}' towards '{target}' ignored by the resolver (does not require fixed coordinates).")
 
         # 4. Queing task on Redis (Publisher)
         if agent_plan and state.redis_client:
