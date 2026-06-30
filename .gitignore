@@ -36,3 +36,8 @@ log/
 *.safetensors
 *.bin
 .devcontainer/data/qdrant_storage/
+
+# ==============================
+# Extra
+# ==============================
+src/api/memory/*
