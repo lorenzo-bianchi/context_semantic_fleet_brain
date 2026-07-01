@@ -11,7 +11,6 @@ import redis
 import json
 import time
 import math
-import random
 import cv2
 import numpy as np
 import base64
@@ -77,10 +76,11 @@ class RedisBridgeNode(Node):
         }
 
         self.exploration_waypoints = [
-            (2.0, 2.0, 1.5),
-            (2.0, -2.0, 1.5),
-            (-2.0, -2.0, 1.5),
-            (-2.0, 2.0, 1.5)
+            (-4.0,  6.0, 1.5),
+            ( 5.0, -8.0, 1.5),
+            ( 7.0,  4.0, 1.5),
+            (-6.0, -4.0, 1.5),
+            ( 2.0, -1.0, 1.5),
         ]
 
         self.timer = self.create_timer(0.5, self.poll_queue, callback_group=self.control_cb_group)
@@ -184,10 +184,11 @@ class RedisBridgeNode(Node):
             action = step.get('action', 'UNKNOWN')
             target = step.get('target', 'UNKNOWN')
 
+            explicit_goal = step.get("explicit_goal", None)
             self.get_logger().info(f"   ---> Executing: {action} towards '{target}'")
 
             if action == "NAVIGATE":
-                self.handle_navigate(target)
+                self.handle_navigate(target, explicit_goal=explicit_goal)
             elif action == "SEARCH":
                 self.handle_search(target)
             elif action == "EXPLORE":
