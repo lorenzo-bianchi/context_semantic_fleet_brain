@@ -14,7 +14,6 @@
 #include <algorithm>
 #include <vector>
 
-// Semantic map structures
 struct SimWall {
     std::string name;
     Vector3 position;
@@ -42,7 +41,6 @@ public:
         vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
             "/cmd_vel", 10, std::bind(&SimulatorNode::cmd_vel_callback, this, std::placeholders::_1));
 
-        // Load world definition from JSON
         load_world("/workspace/world_config.json");
 
         if (is_headless_) {
@@ -53,14 +51,12 @@ public:
         InitWindow(640, 480, "Semantic Fleet Brain - Simulator");
         SetTraceLogLevel(LOG_WARNING);
 
-        // External static camera setup
         camera_external_.position = Vector3{ 10.0f, 15.0f, 10.0f };
         camera_external_.target = Vector3{ 0.0f, 0.0f, 0.0f };
         camera_external_.up = Vector3{ 0.0f, 1.0f, 0.0f };
         camera_external_.fovy = 45.0f;
         camera_external_.projection = CAMERA_PERSPECTIVE;
 
-        // FPV (First Person View) camera setup
         camera_fpv_ = camera_external_;
         camera_fpv_.fovy = 90.0f;
 
@@ -81,6 +77,14 @@ public:
         drone_pitch_ += cmd_pitch_rate_ * dt_;
         drone_yaw_   += cmd_yaw_rate_ * dt_;
 
+        float manual_move_speed = 4.0f * dt_;
+        float manual_rot_speed = 1.5f * dt_;
+
+        if (use_fpv_) {
+            if (IsKeyDown(KEY_LEFT)) drone_yaw_ += manual_rot_speed;
+            if (IsKeyDown(KEY_RIGHT)) drone_yaw_ -= manual_rot_speed;
+        }
+
         Matrix rot = MatrixIdentity();
         rot = MatrixMultiply(rot, MatrixRotateX(drone_roll_));   
         rot = MatrixMultiply(rot, MatrixRotateZ(drone_pitch_));  
@@ -93,6 +97,16 @@ public:
         drone_pos_ = Vector3Add(drone_pos_, Vector3Scale(forward, cmd_vel_x_ * dt_));
         drone_pos_ = Vector3Add(drone_pos_, Vector3Scale(left, cmd_vel_y_ * dt_));
         drone_pos_ = Vector3Add(drone_pos_, Vector3Scale(up, cmd_vel_z_ * dt_));
+
+        if (use_fpv_) {
+            if (IsKeyDown(KEY_W)) drone_pos_ = Vector3Add(drone_pos_, Vector3Scale(forward, manual_move_speed));
+            if (IsKeyDown(KEY_S)) drone_pos_ = Vector3Subtract(drone_pos_, Vector3Scale(forward, manual_move_speed));
+            if (IsKeyDown(KEY_A)) drone_pos_ = Vector3Add(drone_pos_, Vector3Scale(left, manual_move_speed));
+            if (IsKeyDown(KEY_D)) drone_pos_ = Vector3Subtract(drone_pos_, Vector3Scale(left, manual_move_speed));
+            
+            if (IsKeyDown(KEY_UP)) drone_pos_.y += manual_move_speed;
+            if (IsKeyDown(KEY_DOWN)) drone_pos_.y -= manual_move_speed;
+        }
 
         camera_fpv_.position = Vector3Add(drone_pos_, Vector3Scale(forward, 0.6f));
         camera_fpv_.target = Vector3Add(camera_fpv_.position, forward);
@@ -133,14 +147,14 @@ public:
             }
 
             if (use_fpv_) {
-                DrawText("MODE: FPV (Drone Nose)", 10, 10, 20, DARKGREEN);
+                DrawText("MODE: FPV", 10, 10, 20, DARKGREEN);
+                DrawText("WASD to Move | ARROWS to Rotate/Alt", 10, 35, 10, DARKGRAY);
             } else {
                 DrawText("MODE: FREE CAMERA", 10, 10, 20, DARKBLUE);
                 DrawText("WASD to Move | ARROWS to Rotate", 10, 35, 10, DARKGRAY);
             }
             DrawText("Press 'C' to toggle camera", 10, 55, 10, DARKGRAY);
-            DrawText(TextFormat("Alt: %.2f | XYZ: (%.1f, %.1f, %.1f)", drone_pos_.y, drone_pos_.x, drone_pos_.y, drone_pos_.z), 10, 75, 15, RED);
-            DrawText(TextFormat("Walls: %lu | Objects: %lu", walls_.size(), objects_.size()), 10, 95, 15, BLACK);
+            DrawText(TextFormat("Alt(Z): %.2f | X: %.1f | Y: %.1f | Yaw: %.1f deg", drone_pos_.y, drone_pos_.x, -drone_pos_.z, drone_yaw_ * RAD2DEG), 10, 75, 15, RED);
 
         EndDrawing();
 
@@ -152,27 +166,25 @@ private:
         float len = 2.0f;
         float thickness = 0.05f;
         DrawCylinderEx(Vector3{0.0f, 0.0f, 0.0f}, Vector3{len, 0.0f, 0.0f}, thickness, thickness, 8, RED);
-        DrawCylinderEx(Vector3{0.0f, 0.0f, 0.0f}, Vector3{0.0f, len, 0.0f}, thickness, thickness, 8, GREEN);
-        DrawCylinderEx(Vector3{0.0f, 0.0f, 0.0f}, Vector3{0.0f, 0.0f, len}, thickness, thickness, 8, BLUE);
+        DrawCylinderEx(Vector3{0.0f, 0.0f, 0.0f}, Vector3{0.0f, 0.0f, -len}, thickness, thickness, 8, GREEN);
+        DrawCylinderEx(Vector3{0.0f, 0.0f, 0.0f}, Vector3{0.0f, len, 0.0f}, thickness, thickness, 8, BLUE);
 
         DrawSphere(Vector3{len, 0.0f, 0.0f}, 0.1f, RED);
-        DrawSphere(Vector3{0.0f, len, 0.0f}, 0.1f, GREEN);
-        DrawSphere(Vector3{0.0f, 0.0f, len}, 0.1f, BLUE);
+        DrawSphere(Vector3{0.0f, 0.0f, -len}, 0.1f, GREEN);
+        DrawSphere(Vector3{0.0f, len, 0.0f}, 0.1f, BLUE);
     }
+
     void draw_scene() {
         draw_axes();
 
-        // Draw floor plane and grid
         DrawPlane(Vector3{0.0f, -0.01f, 0.0f}, Vector2{50.0f, 50.0f}, Color{160, 160, 160, 255}); 
         DrawGrid(50, 1.0f); 
 
-        // Draw walls
         for (const auto& wall : walls_) {
             DrawCube(wall.position, wall.size.x, wall.size.y, wall.size.z, wall.color);
             DrawCubeWires(wall.position, wall.size.x, wall.size.y, wall.size.z, BLACK);
         }
 
-        // Draw semantic objects
         for (const auto& obj : objects_) {
             if (obj.shape == "cube") {
                 DrawCube(obj.position, obj.size, obj.size, obj.size, obj.color);
@@ -192,18 +204,15 @@ private:
             }
         }
 
-        // Draw drone with 6DOF orientation
         rlPushMatrix();
             rlTranslatef(drone_pos_.x, drone_pos_.y, drone_pos_.z);
             rlRotatef(drone_yaw_ * RAD2DEG, 0, 1, 0);
             rlRotatef(drone_pitch_ * RAD2DEG, 0, 0, 1);
             rlRotatef(drone_roll_ * RAD2DEG, 1, 0, 0);
 
-            // Drone body
             DrawCube(Vector3{0.0f, 0.0f, 0.0f}, 0.15f, 0.04f, 0.15f, GREEN);
             DrawCubeWires(Vector3{0.0f, 0.0f, 0.0f}, 0.15f, 0.04f, 0.15f, BLACK);
 
-            // Arms configuration
             rlPushMatrix();
                 rlRotatef(45.0f, 0, 1, 0);
                 DrawCube(Vector3{0.0f, 0.0f, 0.0f}, 0.4f, 0.015f, 0.015f, GRAY);
@@ -214,19 +223,16 @@ private:
             float prop_y = 0.03f;
             float p_rad = 0.08f;
 
-            // Motors
             DrawCylinder(Vector3{arm_d, 0.01f, -arm_d}, 0.015f, 0.015f, 0.03f, 8, BLACK);
             DrawCylinder(Vector3{arm_d, 0.01f, arm_d}, 0.015f, 0.015f, 0.03f, 8, BLACK);
             DrawCylinder(Vector3{-arm_d, 0.01f, -arm_d}, 0.015f, 0.015f, 0.03f, 8, BLACK);
             DrawCylinder(Vector3{-arm_d, 0.01f, arm_d}, 0.015f, 0.015f, 0.03f, 8, BLACK);
 
-            // Propellers visualization
             DrawCylinder(Vector3{arm_d, prop_y, -arm_d}, p_rad, p_rad, 0.005f, 16, ColorAlpha(RED, 0.7f));
             DrawCylinder(Vector3{arm_d, prop_y, arm_d}, p_rad, p_rad, 0.005f, 16, ColorAlpha(RED, 0.7f));
             DrawCylinder(Vector3{-arm_d, prop_y, -arm_d}, p_rad, p_rad, 0.005f, 16, ColorAlpha(DARKGRAY, 0.7f));
             DrawCylinder(Vector3{-arm_d, prop_y, arm_d}, p_rad, p_rad, 0.005f, 16, ColorAlpha(DARKGRAY, 0.7f));
 
-            // FPV Camera lens
             DrawCube(Vector3{0.08f, -0.01f, 0.0f}, 0.04f, 0.03f, 0.03f, BLACK);
             DrawSphere(Vector3{0.10f, -0.01f, 0.0f}, 0.012f, BLUE);
         rlPopMatrix();
@@ -260,10 +266,18 @@ private:
             for (const auto& w : j["walls"]) {
                 SimWall wall;
                 wall.name = w["name"];
-                float forced_height = 3.0f;
+
+                float forced_height = w["height"].get<float>();
                 float center_y = forced_height / 2.0f;
+
                 wall.size = Vector3{w["width"].get<float>(), forced_height, w["depth"].get<float>()};
-                wall.position = Vector3{w["x"].get<float>(), center_y, w["z"].get<float>()};
+
+                wall.position = Vector3{
+                    w["x"].get<float>(), 
+                    center_y, 
+                    -w["y"].get<float>()
+                };
+
                 wall.color = parse_color(w["color"]);
                 walls_.push_back(wall);
             }
@@ -275,7 +289,13 @@ private:
                 obj.name = o["name"];
                 obj.shape = o["shape"];
                 obj.size = o["size"];
-                obj.position = Vector3{o["x"].get<float>(), o["y"].get<float>(), o["z"].get<float>()};
+
+                obj.position = Vector3{
+                    o["x"].get<float>(), 
+                    o["z"].get<float>(), 
+                    -o["y"].get<float>()
+                };
+
                 obj.color = parse_color(o["color"]);
                 objects_.push_back(obj);
             }

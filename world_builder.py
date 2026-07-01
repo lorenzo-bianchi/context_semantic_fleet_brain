@@ -302,8 +302,9 @@ class WorldBuilder:
 
         center_x = (self.cols // 2) * self.ui_cell_size
         center_y = (self.rows // 2) * self.ui_cell_size
-        self.canvas.create_line(center_x, 0, center_x, self.rows * self.ui_cell_size, fill=AXIS_COLOR, dash=(4, 4))
-        self.canvas.create_line(0, center_y, self.cols * self.ui_cell_size, center_y, fill=AXIS_COLOR, dash=(4, 4))
+
+        self.canvas.create_line(0, center_y, self.cols * self.ui_cell_size, center_y, fill="red", width=3)
+        self.canvas.create_line(center_x, 0, center_x, self.rows * self.ui_cell_size, fill="green", width=3)
 
     def clear_grid(self):
         self.world_data.clear()
@@ -313,7 +314,7 @@ class WorldBuilder:
     def export_json(self):
         output = {"walls": [], "objects": []}
         offset_x = self.cols // 2
-        offset_z = self.rows // 2
+        offset_y = self.rows // 2
         wall_counter = 0
         obj_counter = 0
 
@@ -322,7 +323,7 @@ class WorldBuilder:
 
         for (row, col), data in self.world_data.items():
             sim_x = float(col - offset_x) * cell_scale
-            sim_z = float(row - offset_z) * cell_scale
+            sim_y = -float(row - offset_y) * cell_scale
 
             hex_color = data["color"].lstrip('#')
             rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
@@ -331,16 +332,24 @@ class WorldBuilder:
             if data["type"] == "wall":
                 output["walls"].append({
                     "name": f"wall_{wall_counter}",
-                    "x": sim_x, "y": 1.0, "z": sim_z,
-                    "width": cell_scale, "height": 2.0, "depth": cell_scale, "color": rgba_color
+                    "x": sim_x,
+                    "y": sim_y,
+                    "z": 1.0,
+                    "width": cell_scale,
+                    "height": 2.0,
+                    "depth": cell_scale,
+                    "color": rgba_color
                 })
                 wall_counter += 1
             else:
                 output["objects"].append({
                     "name": f"{data['shape']}_{obj_counter}",
                     "shape": data["shape"],
-                    "x": sim_x, "y": cell_scale * 0.5, "z": sim_z,
-                    "size": cell_scale, "color": rgba_color
+                    "x": sim_x,
+                    "y": sim_y,
+                    "z": cell_scale * 0.5,
+                    "size": cell_scale,
+                    "color": rgba_color
                 })
                 obj_counter += 1
 
