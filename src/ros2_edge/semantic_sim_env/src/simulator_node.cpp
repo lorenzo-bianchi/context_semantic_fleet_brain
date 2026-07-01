@@ -148,7 +148,20 @@ public:
     }
 
 private:
+    void draw_axes() {
+        float len = 2.0f;
+        float thickness = 0.05f;
+        DrawCylinderEx(Vector3{0.0f, 0.0f, 0.0f}, Vector3{len, 0.0f, 0.0f}, thickness, thickness, 8, RED);
+        DrawCylinderEx(Vector3{0.0f, 0.0f, 0.0f}, Vector3{0.0f, len, 0.0f}, thickness, thickness, 8, GREEN);
+        DrawCylinderEx(Vector3{0.0f, 0.0f, 0.0f}, Vector3{0.0f, 0.0f, len}, thickness, thickness, 8, BLUE);
+
+        DrawSphere(Vector3{len, 0.0f, 0.0f}, 0.1f, RED);
+        DrawSphere(Vector3{0.0f, len, 0.0f}, 0.1f, GREEN);
+        DrawSphere(Vector3{0.0f, 0.0f, len}, 0.1f, BLUE);
+    }
     void draw_scene() {
+        draw_axes();
+
         // Draw floor plane and grid
         DrawPlane(Vector3{0.0f, -0.01f, 0.0f}, Vector2{50.0f, 50.0f}, Color{160, 160, 160, 255}); 
         DrawGrid(50, 1.0f); 
