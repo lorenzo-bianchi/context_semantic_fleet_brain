@@ -70,6 +70,10 @@ class RedisBridgeNode(Node):
         self.current_z = 0.0
         self.current_yaw = 0.0
 
+        self.target_cx = None
+        self.target_cy = None
+        self.target_area = None
+
         self.semantic_map = {
             "north corridor": {"x": 5.0, "y": 0.0, "z": 1.5, "yaw": 0.0},
             "red box": {"x": 5.0, "y": 3.0, "z": 1.5, "yaw": 1.57}
@@ -118,40 +122,52 @@ class RedisBridgeNode(Node):
         # 3. Find contours
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
+        max_area = 0
+        best_contour = None
+
         for contour in contours:
             area = cv2.contourArea(contour)
-            if area > 1000:
-                x, y, w, h = cv2.boundingRect(contour)
+            if area > 1000 and area > max_area:
+                max_area = area
+                best_contour = contour
 
-                # Draw bounding box and label on annotated frame
-                cv2.rectangle(annotated_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                cv2.putText(annotated_frame, f"Area: {int(area)}px", (x, y - 10), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        if best_contour is not None:
+            x, y, w, h = cv2.boundingRect(best_contour)
 
-                if self.is_executing:
-                    current_time = time.time()
+            self.target_cx = x + (w / 2)
+            self.target_cy = y + (h / 2)
+            self.target_area = max_area
 
-                    # Check debounce timer before Redis transmission
-                    if current_time - self.last_capture_time > self.capture_cooldown:
-                        self.last_capture_time = current_time
+            cv2.rectangle(annotated_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            cv2.putText(annotated_frame, f"Area: {int(max_area)}px", (x, y - 10), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            cv2.circle(annotated_frame, (int(self.target_cx), int(self.target_cy)), 5, (0, 0, 255), -1)
 
-                        self.get_logger().info(f"📸 Object detected! Bounding Box: [x:{x}, y:{y}, w:{w}, h:{h}]. Sending to Redis...")
+            if self.is_executing:
+                current_time = time.time()
 
-                        # Encode original clean frame for server
-                        _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                        b64_image = base64.b64encode(buffer).decode('utf-8')
+                if current_time - self.last_capture_time > self.capture_cooldown:
+                    self.last_capture_time = current_time
 
-                        payload = {
-                            "x": round(self.current_x, 2),
-                            "y": round(self.current_y, 2),
-                            "z": round(self.current_z, 2),
-                            "yaw": round(self.current_yaw, 2),
-                            "image": b64_image,
-                            "timestamp": current_time
-                        }
+                    self.get_logger().info(f"📸 Object detected! Bounding Box: [x:{x}, y:{y}, w:{w}, h:{h}]. Sending to Redis...")
 
-                        self.redis_client.rpush(self.memory_queue, json.dumps(payload))
-                        break 
+                    _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                    b64_image = base64.b64encode(buffer).decode('utf-8')
+
+                    payload = {
+                        "x": round(self.current_x, 2),
+                        "y": round(self.current_y, 2),
+                        "z": round(self.current_z, 2),
+                        "yaw": round(self.current_yaw, 2),
+                        "image": b64_image,
+                        "timestamp": current_time
+                    }
+
+                    self.redis_client.rpush(self.memory_queue, json.dumps(payload))
+        else:
+            self.target_cx = None
+            self.target_cy = None
+            self.target_area = None
 
         # 4. Publish annotated frame to ROS 2
         _, annot_buffer = cv2.imencode('.jpg', annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
@@ -159,7 +175,7 @@ class RedisBridgeNode(Node):
         annot_msg = CompressedImage()
         annot_msg.header.stamp = self.get_clock().now().to_msg()
         annot_msg.format = "jpeg"
-        annot_msg.data = np.array(annot_buffer).tobytes()
+        annot_msg.data = annot_buffer.tobytes()
 
         self.annotated_image_pub.publish(annot_msg)
 
@@ -224,7 +240,6 @@ class RedisBridgeNode(Node):
             dy = goal_y - self.current_y
             dz = goal_z - self.current_z
 
-            distance_xy = math.sqrt(dx**2 + dy**2)
             distance_3d = math.sqrt(dx**2 + dy**2 + dz**2)
 
             if target_yaw is not None:
@@ -255,6 +270,8 @@ class RedisBridgeNode(Node):
         msg.linear.x = msg.linear.y = msg.linear.z = 0.0
         msg.angular.z = 0.0
         self.cmd_vel_pub.publish(msg)
+
+        self.handle_visual_approach()
 
     def handle_search(self, target):
         self.get_logger().info(f"        👁️ [Vision] Scanning environment 360° for '{target}'...")
@@ -291,6 +308,51 @@ class RedisBridgeNode(Node):
 
         self.handle_return_home()
         self.get_logger().info("        ✅ Systematic exploration completed.")
+
+    def handle_visual_approach(self):
+        self.get_logger().info("        👀 Object in sight! Initiating visual centering...")
+        msg = Twist()
+
+        img_center_x = 640 / 2
+        img_center_y = 480 / 2
+        desired_area = 25000
+
+        Kp_yaw = 0.003
+        Kp_z = 0.003
+        Kp_x = 0.0001
+
+        start_time = time.time()
+        timeout = 10.0
+
+        while rclpy.ok() and (time.time() - start_time) < timeout:
+            if self.target_cx is None:
+                msg.linear.x = msg.linear.z = msg.angular.z = 0.0
+                self.cmd_vel_pub.publish(msg)
+                time.sleep(0.05)
+                continue
+
+            error_x = img_center_x - self.target_cx
+            error_y = img_center_y - self.target_cy
+            error_area = desired_area - self.target_area
+
+            msg.angular.z = Kp_yaw * error_x
+            msg.linear.z = Kp_z * error_y
+
+            if abs(error_area) > 2000:
+                msg.linear.x = Kp_x * error_area
+            else:
+                msg.linear.x = 0.0
+
+            self.cmd_vel_pub.publish(msg)
+
+            if abs(error_x) < 20 and abs(error_y) < 20 and abs(error_area) < 2000:
+                self.get_logger().info("        🎯 Target perfectly centered and in range!")
+                break
+
+            time.sleep(0.05)
+
+        msg.linear.x = msg.linear.y = msg.linear.z = msg.angular.z = 0.0
+        self.cmd_vel_pub.publish(msg)
 
 def main(args=None):
     rclpy.init(args=args)
