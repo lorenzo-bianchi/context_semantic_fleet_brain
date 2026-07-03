@@ -179,6 +179,11 @@ class RedisBridgeNode(Node):
 
         self.annotated_image_pub.publish(annot_msg)
 
+        # 5. Publish video stream on Redis (Pub/Sub)
+        _, stream_buffer = cv2.imencode('.jpg', annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
+        b64_stream = base64.b64encode(stream_buffer).decode('utf-8')
+        self.redis_client.publish("live_video_stream", b64_stream)
+
     def poll_queue(self):
         if self.is_executing:
             return
@@ -213,7 +218,7 @@ class RedisBridgeNode(Node):
             time.sleep(0.5) 
         self.get_logger().info("✅ Plan fully executed.\n")
 
-    def handle_navigate(self, target, explicit_goal=None):
+    def handle_navigate(self, target, explicit_goal=None, is_exploration=False):
         target_yaw = None
 
         if explicit_goal:
@@ -270,8 +275,10 @@ class RedisBridgeNode(Node):
         msg.linear.x = msg.linear.y = msg.linear.z = 0.0
         msg.angular.z = 0.0
         self.cmd_vel_pub.publish(msg)
+        self.get_logger().info(f"        ✅ Target '{target}' fully reached and aligned.")
 
-        self.handle_visual_approach()
+        if not is_exploration and target.lower() != "coordinates":
+            self.handle_visual_approach()
 
     def handle_search(self, target):
         self.get_logger().info(f"        👁️ [Vision] Scanning environment 360° for '{target}'...")
@@ -302,7 +309,7 @@ class RedisBridgeNode(Node):
 
         for i, waypoint in enumerate(self.exploration_waypoints):
             self.get_logger().info(f"        🧭 Moving to waypoint {i+1}/{len(self.exploration_waypoints)}: {waypoint}")
-            self.handle_navigate(f"Waypoint {i+1}", explicit_goal=waypoint)
+            self.handle_navigate(f"Waypoint {i+1}", explicit_goal=waypoint, is_exploration=True)
             self.handle_search("environment")
             time.sleep(1.0)
 
