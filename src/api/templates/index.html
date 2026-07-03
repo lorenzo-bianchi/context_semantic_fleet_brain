@@ -1,105 +1,239 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
-    <title>🤖 Fleet Brain Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🤖 Fleet Brain - Ground Control Station</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f5; margin: 0; padding: 40px; display: flex; justify-content: center; }
-        .container { background-color: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 700px; width: 100%; }
-        h2 { color: #1a73e8; margin-top: 0; display: flex; align-items: center; gap: 10px; }
-        .section { margin-bottom: 25px; padding-bottom: 20px; border-bottom: 1px solid #eee; }
-        .section:last-child { border-bottom: none; }
+        :root {
+            --bg-color: #f0f2f5;
+            --container-bg: #ffffff;
+            --text-color: #333333;
+            --border-color: #e0e0e0;
+            --terminal-bg: #1e1e1e;
+            --terminal-text: #4EC9B0;
+            --btn-text: #ffffff;
+            --shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
 
-        .button-group { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
-        .input-group { display: flex; gap: 10px; margin-bottom: 10px; }
+        [data-theme="dark"] {
+            --bg-color: #121212;
+            --container-bg: #1e1e1e;
+            --text-color: #e0e0e0;
+            --border-color: #333333;
+            --terminal-bg: #000000;
+            --terminal-text: #00ff00;
+            --shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
 
-        input[type="text"] { flex: 1; padding: 10px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; outline: none; }
-        input[type="text"]:focus { border-color: #1a73e8; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background-color: var(--bg-color); 
+            color: var(--text-color);
+            margin: 0; 
+            padding: 20px; 
+            transition: background-color 0.3s, color 0.3s;
+        }
 
-        button { padding: 10px 20px; font-size: 15px; border: none; border-radius: 6px; cursor: pointer; transition: opacity 0.2s; color: white; font-weight: 600; }
+        .header-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        h2 { margin: 0; color: #1a73e8; display: flex; align-items: center; gap: 10px; }
+        [data-theme="dark"] h2 { color: #64b5f6; }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .panel { 
+            background-color: var(--container-bg); 
+            padding: 20px; 
+            border-radius: 8px; 
+            box-shadow: var(--shadow); 
+            border: 1px solid var(--border-color);
+        }
+
+        .video-container {
+            width: 100%;
+            aspect-ratio: 4/3;
+            background-color: #000;
+            border-radius: 6px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #666;
+            margin-bottom: 15px;
+            border: 2px solid var(--border-color);
+        }
+
+        .video-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .button-group { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px; }
+        .input-group { display: flex; gap: 10px; margin-bottom: 15px; }
+
+        input[type="text"], input[type="file"] { 
+            flex: 1; 
+            padding: 10px; 
+            font-size: 14px; 
+            border: 1px solid var(--border-color); 
+            border-radius: 6px; 
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            outline: none; 
+        }
+
+        button { 
+            padding: 10px 15px; 
+            font-size: 14px; 
+            border: none; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            transition: opacity 0.2s, transform 0.1s; 
+            color: var(--btn-text); 
+            font-weight: 600; 
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
         button:hover { opacity: 0.8; }
+        button:active { transform: scale(0.98); }
 
         .btn-primary { background-color: #1a73e8; }
         .btn-secondary { background-color: #607d8b; }
-        .btn-success { background-color: #4caf50; }
-
+        .btn-danger { background-color: #e53935; }
+        .btn-warning { background-color: #ff9800; color: #000; }
         .btn-gemini { background-color: #8e44ad; } 
         .btn-ollama { background-color: #e67e22; }
 
-        .output-area { background-color: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 6px; height: 250px; overflow-y: auto; font-family: monospace; white-space: pre-wrap; word-wrap: break-word; font-size: 14px; }
-        .log-time { color: #888; font-size: 12px; margin-right: 8px; }
+        .output-area { 
+            background-color: var(--terminal-bg); 
+            color: var(--terminal-text); 
+            padding: 15px; 
+            border-radius: 6px; 
+            height: 400px; 
+            overflow-y: auto; 
+            font-family: 'Courier New', Courier, monospace; 
+            font-size: 13px;
+            border: 1px solid var(--border-color);
+        }
+        .log-time { color: #888; margin-right: 8px; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h2>🤖 Fleet Brain Dashboard</h2>
 
-        <div class="section">
-            <div class="button-group">
-                <button class="btn-success" onclick="checkHealth()">🏥 Health Check</button>
-                <button class="btn-secondary" onclick="fetchHistory()">📜 View History</button>
-                <button id="llmToggleBtn" class="btn-gemini" onclick="toggleLLM()">✨ Provider: Gemini</button>
-                <button class="btn-secondary" onclick="clearConsole()" style="margin-left: auto; background-color: #e53935;">🗑️ Clear</button>
-            </div>
+    <div class="header-bar">
+        <h2>🤖 Fleet Brain GCS</h2>
+        <div class="button-group" style="margin: 0;">
+            <button class="btn-secondary" onclick="toggleTheme()">🌗 Toggle Theme</button>
+            <button id="llmToggleBtn" class="btn-gemini" onclick="toggleLLM()">✨ Provider: Gemini</button>
+            <button class="btn-warning" onclick="resetMemory()">🧹 Wipe Memory</button>
         </div>
+    </div>
 
-        <div class="section">
-            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">Dispatch Command & Analyze Scene</label>
-
+    <div class="dashboard-grid">
+        <div class="panel">
+            <h3 style="margin-top: 0;">📸 Live FPV Feed</h3>
+            <div class="video-container">
+                <img id="cameraStream" alt="Waiting for Video Stream..." src="">
+                <span style="display:none;">Stream offline. Check ROS 2 bridge.</span>
+            </div>
+            
+            <h3 style="margin-top: 20px;">🕹️ Mission Control</h3>
             <div class="input-group">
-                <input type="text" id="instructionInput" value="Explore the room" placeholder="Text instruction (e.g., Find the charging station...)">
+                <input type="text" id="instructionInput" value="Explore the room" placeholder="Enter AI Command (e.g., Go to the red box)">
+                <button class="btn-primary" onclick="sendCommand()">🚀 Dispatch</button>
             </div>
-
-            <div class="input-group" style="align-items: center; margin-top: 10px;">
-                <input type="file" id="imageFileInput" accept="image/*" style="flex: 1;">
-                <button class="btn-primary" onclick="sendCommand()">🚀 Execute</button>
-            </div>
-            <small style="color: #666; font-style: italic;">Select a local image to evaluate visual scene, or leave empty for Text-only Embedding.</small>
         </div>
 
-        <div class="section">
-            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">🧠 Semantic Memory Search (Qdrant)</label>
-            <div class="input-group">
-                <input type="text" id="searchInput" placeholder="e.g., 'Move to where the food is'...">
-                <input type="number" id="limitInput" value="3" min="1" max="10" title="Results limit">
-                <button class="btn-warning" style="background-color: #ff9800;" onclick="searchMemory()">🔍 Search</button>
+        <div class="panel">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h3 style="margin: 0;">🖥️ AI Terminal</h3>
+                <div class="button-group" style="margin: 0;">
+                    <button class="btn-secondary" style="padding: 5px 10px; font-size: 12px;" onclick="fetchHistory()">📜 History</button>
+                    <button class="btn-danger" style="padding: 5px 10px; font-size: 12px;" onclick="clearConsole()">🗑️ Clear</button>
+                </div>
             </div>
-            <small style="color: #666; font-style: italic;">Search for past commands by their mathematical meaning, not by exact words.</small>
-        </div>
-
-        <div>
-            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">Terminal Output</label>
-            <div id="outputBox" class="output-area">Waiting for actions...</div>
+            <div id="outputBox" class="output-area">Initializing connection to Fleet Brain...</div>
         </div>
     </div>
 
     <script>
         const outputBox = document.getElementById('outputBox');
-        let currentProvider = "gemini"; // Stato iniziale
+        let currentProvider = "gemini";
+
+        if (localStorage.getItem('theme') === 'light') {
+            document.documentElement.setAttribute('data-theme', 'light');
+        }
+
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+        }
+
+        const imgElement = document.getElementById('cameraStream');
+        const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws/video_stream`;
+        let ws;
+
+        function connectWebSocket() {
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = function() {
+                logToConsole("📡 Live video stream connected via WebSocket.");
+            };
+
+            ws.onmessage = function(event) {
+                imgElement.src = "data:image/jpeg;base64," + event.data;
+            };
+
+            ws.onclose = function() {
+                logToConsole("⚠️ Video stream disconnected. Reconnecting in 2s...");
+                setTimeout(connectWebSocket, 2000);
+            };
+
+            ws.onerror = function(err) {
+                ws.close();
+            };
+        }
+
+        connectWebSocket();
 
         function logToConsole(message, data = null) {
             const now = new Date().toLocaleTimeString();
-            let logHtml = `<div style="margin-bottom: 10px;"><span class="log-time">[${now}]</span> ${message}`;
+            let logHtml = `<div style="margin-bottom: 5px;"><span class="log-time">[${now}]</span> ${message}`;
             if (data) {
-                logHtml += `\n<span style="color: #4EC9B0;">${JSON.stringify(data, null, 2)}</span>`;
+                logHtml += `\n<span style="color: #64b5f6; display: block; margin-top: 4px; padding-left: 10px;">${JSON.stringify(data, null, 2)}</span>`;
             }
             logHtml += `</div>`;
 
-            if (outputBox.innerText === "Waiting for actions...") outputBox.innerHTML = "";
-            outputBox.innerHTML = logHtml + outputBox.innerHTML;
+            if (outputBox.innerText.includes("Initializing")) outputBox.innerHTML = "";
+            outputBox.innerHTML += logHtml;
+            outputBox.scrollTop = outputBox.scrollHeight;
         }
 
         function clearConsole() {
-            outputBox.innerHTML = "Waiting for actions...";
+            outputBox.innerHTML = "Terminal cleared.\n";
         }
 
-        // --- Nuova funzione per gestire il toggle dell'LLM ---
         async function toggleLLM() {
-            // Inverti lo stato
             currentProvider = currentProvider === "gemini" ? "ollama" : "gemini";
             const btn = document.getElementById('llmToggleBtn');
 
-            // Aggiorna l'estetica del bottone
             if (currentProvider === "gemini") {
                 btn.innerText = "✨ Provider: Gemini";
                 btn.className = "btn-gemini";
@@ -110,41 +244,41 @@
 
             logToConsole(`⏳ Switching LLM provider to ${currentProvider.toUpperCase()}...`);
 
-            // Comunica al backend il cambio di stato
             try {
                 const response = await fetch('/api/v1/llm-provider', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ provider: currentProvider })
                 });
-                
+
                 if (response.ok) {
                     const data = await response.json();
-                    logToConsole(`✅ LLM Engine switched successfully:`, data);
+                    logToConsole(`✅ Engine switched successfully.`);
                 } else {
-                    throw new Error("Backend non ha risposto correttamente");
+                    throw new Error("Backend error");
                 }
             } catch (error) {
-                logToConsole(`❌ Failed to switch LLM provider. Controlla che l'endpoint esista.`);
+                logToConsole(`❌ Failed to switch LLM provider.`);
             }
         }
 
-        async function checkHealth() {
-            logToConsole("⏳ Running health check...");
+        async function resetMemory() {
+            if(!confirm("Are you sure you want to wipe the spatial memory? The drone will forget all objects.")) return;
+
+            logToConsole("⏳ Sending wipe command to Qdrant...");
             try {
-                const response = await fetch('/health');
+                const response = await fetch('/api/v1/reset_memory', { method: 'POST' });
                 const data = await response.json();
-                logToConsole("✅ Health Check OK:", data);
+                logToConsole("🧹 Memory wiped successfully:", data);
             } catch (error) {
-                logToConsole("❌ Health Check Failed. API is offline.");
+                logToConsole("❌ Failed to wipe memory.");
             }
         }
 
         async function fetchHistory() {
-            logToConsole("⏳ Fetching command history from DB...");
+            logToConsole("⏳ Fetching command history...");
             try {
                 const response = await fetch('/api/v1/history'); 
-                if (!response.ok) throw new Error("Endpoint not found or error");
                 const data = await response.json();
                 logToConsole("📜 Database History:", data);
             } catch (error) {
@@ -154,62 +288,26 @@
 
         async function sendCommand() {
             const instruction = document.getElementById('instructionInput').value;
-            const fileInput = document.getElementById('imageFileInput');
-            const file = fileInput.files[0];
-
             if (!instruction) return;
 
-            if (file) {
-                logToConsole(`⏳ Uploading local file "${file.name}" and analyzing...`);
-                const formData = new FormData();
-                formData.append("instruction", instruction);
-                formData.append("image_file", file);
-                try {
-                    const response = await fetch('/api/v1/analyze-scene', { method: 'POST', body: formData });
-                    const data = await response.json();
-                    logToConsole(`✅ Response from /analyze-scene:`, data);
-                } catch (error) {
-                    logToConsole(`❌ Failed to connect to /analyze-scene.`);
-                }
-            } else {
-                logToConsole(`⏳ Calling /command to generate text embedding...`);
-                const payload = { user_id: "dev_user", instruction: instruction };
-                try {
-                    const response = await fetch('/api/v1/command', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-                    const data = await response.json();
-                    logToConsole(`✅ Response from /command:`, data);
-                } catch (error) {
-                    logToConsole(`❌ Failed to connect to /command.`);
-                }
-            }
-        }
-
-        async function searchMemory() {
-            const query = document.getElementById('searchInput').value;
-            const limit = document.getElementById('limitInput').value;
-            if (!query) return;
-            logToConsole(`⏳ Searching Qdrant Memory for meaning of: "${query}"...`);
-            const payload = { query: query, limit: parseInt(limit) };
+            logToConsole(`🚀 Dispatching: "${instruction}"`);
+            const payload = { user_id: "dev_user", instruction: instruction };
             try {
-                const response = await fetch('/api/v1/search-memory', {
+                const response = await fetch('/api/v1/command', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
                 const data = await response.json();
-                if (data.status === "success") {
-                    logToConsole(`🧠 Top Semantic Matches:`, data.matches);
-                } else {
-                    logToConsole(`❌ Search Error:`, data);
-                }
+                logToConsole(`✅ Received Plan:`, data);
             } catch (error) {
-                logToConsole(`❌ Failed to connect to /search-memory.`);
+                logToConsole(`❌ Failed to dispatch command.`);
             }
         }
+
+        document.getElementById('instructionInput').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') sendCommand();
+        });
     </script>
 </body>
 </html>
