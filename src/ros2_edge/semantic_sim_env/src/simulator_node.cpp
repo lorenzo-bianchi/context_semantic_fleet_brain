@@ -103,7 +103,7 @@ public:
             if (IsKeyDown(KEY_S)) drone_pos_ = Vector3Subtract(drone_pos_, Vector3Scale(forward, manual_move_speed));
             if (IsKeyDown(KEY_A)) drone_pos_ = Vector3Add(drone_pos_, Vector3Scale(left, manual_move_speed));
             if (IsKeyDown(KEY_D)) drone_pos_ = Vector3Subtract(drone_pos_, Vector3Scale(left, manual_move_speed));
-            
+
             if (IsKeyDown(KEY_UP)) drone_pos_.y += manual_move_speed;
             if (IsKeyDown(KEY_DOWN)) drone_pos_.y -= manual_move_speed;
         }
@@ -137,7 +137,7 @@ public:
                 draw_scene(true);
             EndMode3D();
 
-            publish_image(); 
+            publish_image();
 
             if (!use_fpv_) {
                 ClearBackground(Color{240, 240, 240, 255});
@@ -176,7 +176,7 @@ private:
 
     void draw_scene(bool is_fpv) {
         if (!is_fpv) {
-        draw_axes();
+            draw_axes();
         }
 
         DrawPlane(Vector3{0.0f, -0.01f, 0.0f}, Vector2{50.0f, 50.0f}, Color{160, 160, 160, 255}); 
