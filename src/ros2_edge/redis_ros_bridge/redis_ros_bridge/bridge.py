@@ -198,16 +198,23 @@ class RedisBridgeNode(Node):
         self.get_logger().info("✅ Plan fully executed.\n")
 
     def handle_navigate(self, target, explicit_goal=None):
+        target_yaw = None
+
         if explicit_goal:
-            goal_x, goal_y, goal_z = explicit_goal
+            if len(explicit_goal) == 4:
+                goal_x, goal_y, goal_z, target_yaw = explicit_goal
+            else:
+                goal_x, goal_y, goal_z = explicit_goal[:3]
         else:
             goal = self.semantic_map.get(target.lower(), {"x": 0.0, "y": 0.0, "z": 1.5, "yaw": 0.0})
             goal_x, goal_y, goal_z = goal["x"], goal["y"], goal["z"]
+            target_yaw = goal.get("yaw", None)
 
         Kp_linear = 0.6
         Kp_z = 0.8
         Kp_angular = 1.5
         distance_tolerance = 0.20 
+        yaw_tolerance = 0.05
 
         msg = Twist()
         self.get_logger().info(f"        🚁 In flight towards {target} ({goal_x:.1f}, {goal_y:.1f}, {goal_z:.1f})...")
@@ -220,27 +227,33 @@ class RedisBridgeNode(Node):
             distance_xy = math.sqrt(dx**2 + dy**2)
             distance_3d = math.sqrt(dx**2 + dy**2 + dz**2)
 
-            if distance_3d < distance_tolerance:
-                self.get_logger().info(f"        📍 Target '{target}' reached.")
-                break
+            if target_yaw is not None:
+                desired_yaw = target_yaw
+            else:
+                desired_yaw = math.atan2(dy, dx)
 
-            angle_to_goal = math.atan2(dy, dx)
-            yaw_error = angle_to_goal - self.current_yaw
+            yaw_error = desired_yaw - self.current_yaw
             yaw_error = math.atan2(math.sin(yaw_error), math.cos(yaw_error))
 
-            msg.angular.z = Kp_angular * yaw_error
+            if distance_3d < distance_tolerance:
+                if target_yaw is None or abs(yaw_error) < yaw_tolerance:
+                    self.get_logger().info(f"        📍 Target '{target}' fully reached and aligned.")
+                    break
 
-            if abs(yaw_error) > 0.5:
-                msg.linear.x = 0.0
-            else:
-                msg.linear.x = Kp_linear * distance_xy
+            local_dx = dx * math.cos(self.current_yaw) + dy * math.sin(self.current_yaw)
+            local_dy = -dx * math.sin(self.current_yaw) + dy * math.cos(self.current_yaw)
 
+            msg.linear.x = Kp_linear * local_dx
+            msg.linear.y = Kp_linear * local_dy
             msg.linear.z = Kp_z * dz
+
+            msg.angular.z = Kp_angular * yaw_error
 
             self.cmd_vel_pub.publish(msg)
             time.sleep(0.05) 
 
-        msg.linear.x = msg.linear.y = msg.linear.z = msg.angular.z = 0.0
+        msg.linear.x = msg.linear.y = msg.linear.z = 0.0
+        msg.angular.z = 0.0
         self.cmd_vel_pub.publish(msg)
 
     def handle_search(self, target):

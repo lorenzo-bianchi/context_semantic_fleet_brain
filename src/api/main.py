@@ -243,6 +243,7 @@ async def get_agent_plan(instruction: str):
     CRITICAL RULES:
     1. If the user asks to "explore", "map", or "scan" the area, you MUST output a single EXPLORE action. Do NOT use NAVIGATE for general exploration.
     2. NAVIGATE is strictly for going to a specific known object or room.
+    3. If the user asks to go to specific explicit coordinates (x, y, z, and optionally yaw), you MUST include an "explicit_goal" array with the numbers, and set "target" to "coordinates". If yaw is provided, the array must have 4 elements: [x, y, z, yaw].
 
     You MUST respond with a JSON object containing a SINGLE key called "plan". 
     The value must be the array of all actions required. Do not stop until all steps are extracted.
@@ -275,6 +276,20 @@ async def get_agent_plan(instruction: str):
       "plan": [
         {{"action": "NAVIGATE", "target": "green pyramid"}},
         {{"action": "SEARCH", "target": "green pyramid"}}
+      ]
+    }}
+
+    Command: "Go to coordinates x 5, y 2, z 1.5"
+    {{
+      "plan": [
+        {{"action": "NAVIGATE", "target": "coordinates", "explicit_goal": [5.0, 2.0, 1.5]}}
+      ]
+    }}
+
+    Command: "Go to the position x=-5, y=0, z=7, yaw=3.14"
+    {{
+      "plan": [
+        {{"action": "NAVIGATE", "target": "coordinates", "explicit_goal": [-5.0, 0.0, 7.0, 3.14]}}
       ]
     }}
 
@@ -549,6 +564,10 @@ async def dispatch_command(payload: CommandRequest):
                 generic_targets = ["unoccupied space", "room boundaries", "environment", "area"]
 
                 if action == "NAVIGATE" and target.lower() not in generic_targets:
+                    if "explicit_goal" in step:
+                        logger.info(f"⏭️ Skipping semantic search, explicit coordinates provided by AI: {step['explicit_goal']}")
+                        continue
+
                     logger.info(f"🔍 Spatial resolution for NAVIGATE towards: '{target}'...")
 
                     target_vector = get_embedding(target)
@@ -565,7 +584,12 @@ async def dispatch_command(payload: CommandRequest):
 
                     if search_result and search_result[0].score > 0.23:
                         best_match = search_result[0].payload
-                        step["explicit_goal"] = [best_match["x"], best_match["y"], best_match["z"]]
+                        step["explicit_goal"] = [
+                            best_match["x"],
+                            best_match["y"],
+                            best_match["z"],
+                            best_match.get("yaw", 0.0)
+                        ]
                         logger.info(f"🎯 Destination found: {step['explicit_goal']}")
                     else:
                         logger.info(f"ℹ️ No known coordinates for '{target}'. The drone will proceed with blind/exploratory navigation.")
