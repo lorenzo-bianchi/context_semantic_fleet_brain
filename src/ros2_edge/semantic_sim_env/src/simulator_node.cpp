@@ -134,7 +134,7 @@ public:
         BeginDrawing();
             ClearBackground(Color{240, 240, 240, 255}); 
             BeginMode3D(camera_fpv_);
-                draw_scene();
+                draw_scene(true);
             EndMode3D();
 
             publish_image(); 
@@ -142,7 +142,7 @@ public:
             if (!use_fpv_) {
                 ClearBackground(Color{240, 240, 240, 255});
                 BeginMode3D(camera_external_);
-                    draw_scene();
+                    draw_scene(false);
                 EndMode3D();
             }
 
@@ -174,8 +174,10 @@ private:
         DrawSphere(Vector3{0.0f, len, 0.0f}, 0.1f, BLUE);
     }
 
-    void draw_scene() {
+    void draw_scene(bool is_fpv) {
+        if (!is_fpv) {
         draw_axes();
+        }
 
         DrawPlane(Vector3{0.0f, -0.01f, 0.0f}, Vector2{50.0f, 50.0f}, Color{160, 160, 160, 255}); 
         DrawGrid(50, 1.0f); 
