@@ -236,7 +236,7 @@ async def get_agent_plan(instruction: str):
     # --- 1. Object-Based Prompting (The industry standard for LLMs) ---
     prompt = f"""You are the 'Fleet Brain', the AI of a ROS 2 robot.
     Analyze the following command and extract the FULL sequence of operations.
-    Allowed actions: EXPLORE, NAVIGATE, SEARCH, PICK, DROP, COMMUNICATE.
+    Allowed actions: EXPLORE, NAVIGATE, SEARCH.
 
     Command: "{instruction}"
 
@@ -252,8 +252,6 @@ async def get_agent_plan(instruction: str):
       "plan": [
         {{"action": "NAVIGATE", "target": "kitchen"}},
         {{"action": "SEARCH", "target": "bottle"}},
-        {{"action": "PICK", "target": "bottle"}},
-        {{"action": "COMMUNICATE", "target": "everyone about the bottle"}}
       ]
     }}
 
@@ -572,7 +570,7 @@ async def dispatch_command(payload: CommandRequest):
                     else:
                         logger.info(f"ℹ️ No known coordinates for '{target}'. The drone will proceed with blind/exploratory navigation.")
 
-                # 2. OTHER ACTIONS (SEARCH, COMMUNICATE, etc.)
+                # 2. OTHER ACTIONS
                 # Pass them through as is, without injecting coordinates
                 else:
                     logger.info(f"⏩ Action '{action}' towards '{target}' ignored by the resolver (does not require fixed coordinates).")
