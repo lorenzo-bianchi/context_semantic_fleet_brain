@@ -9,7 +9,7 @@ from io import BytesIO
 import httpx
 import re
 
-from fastapi import Request, FastAPI, APIRouter, HTTPException, File, UploadFile, Form
+from fastapi import Request, FastAPI, APIRouter, HTTPException, File, UploadFile, Form, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -503,6 +503,30 @@ async def analyze_scene(
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+@app.websocket("/ws/video_stream")
+async def video_stream(websocket: WebSocket):
+    await websocket.accept()
+    pubsub = state.redis_client.pubsub()
+
+    await pubsub.subscribe("live_video_stream")
+
+    try:
+        while True:
+            message = await pubsub.get_message(ignore_subscribe_messages=True)
+
+            if message and message['type'] == 'message':
+                data = message['data']
+                if isinstance(data, bytes):
+                    data = data.decode('utf-8')
+
+                await websocket.send_text(data)
+
+            await asyncio.sleep(0.01)
+
+    except WebSocketDisconnect:
+        logger.info("📱 Frontend disconnected from video stream.")
+        await pubsub.unsubscribe("live_video_stream")
 
 # --- ROUTER ENDPOINTS ---
 @router.post("/command", response_model=CommandResponse, tags=["Orchestration"])
