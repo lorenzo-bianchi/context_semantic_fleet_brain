@@ -73,7 +73,7 @@ class SearchRequest(BaseModel):
 async def lifespan(app: FastAPI):
     """
     Manages the application lifecycle.
-    Initializes the PostgreSQL connection pool, the Qdrant client, 
+    Initializes the PostgreSQL connection pool, the Qdrant client,
     Redis message broker, and loads ML/RAG models into memory.
     """
     if os.getenv("TESTING") == "true":
@@ -245,7 +245,7 @@ async def get_agent_plan(instruction: str):
     2. NAVIGATE is strictly for going to a specific known object or room.
     3. If the user asks to go to specific explicit coordinates (x, y, z, and optionally yaw), you MUST include an "explicit_goal" array with the numbers, and set "target" to "coordinates". If yaw is provided, the array must have 4 elements: [x, y, z, yaw].
 
-    You MUST respond with a JSON object containing a SINGLE key called "plan". 
+    You MUST respond with a JSON object containing a SINGLE key called "plan".
     The value must be the array of all actions required. Do not stop until all steps are extracted.
 
     Example format:
@@ -304,10 +304,10 @@ async def get_agent_plan(instruction: str):
                 response = await client.post(
                     state.ollama_url,
                     json={
-                        "model": "gemma2:9b", 
-                        "prompt": prompt, 
+                        "model": "gemma2:9b",
+                        "prompt": prompt,
                         "stream": False,
-                        "format": "json" 
+                        "format": "json"
                     },
                     timeout=60.0
                 )
@@ -351,7 +351,7 @@ async def get_agent_plan(instruction: str):
         return []
 
     except json.JSONDecodeError:
-        # Emergency regex fallback 
+        # Emergency regex fallback
         try:
             match = re.search(r'\{.*\}', raw_json, re.DOTALL)
             if match:
@@ -528,6 +528,30 @@ async def video_stream(websocket: WebSocket):
         logger.info("📱 Frontend disconnected from video stream.")
         await pubsub.unsubscribe("live_video_stream")
 
+@app.websocket("/ws/terminal_logs")
+async def terminal_logs_stream(websocket: WebSocket):
+    await websocket.accept()
+    pubsub = state.redis_client.pubsub()
+
+    await pubsub.subscribe("terminal_logs")
+
+    try:
+        while True:
+            message = await pubsub.get_message(ignore_subscribe_messages=True)
+
+            if message and message['type'] == 'message':
+                data = message['data']
+                if isinstance(data, bytes):
+                    data = data.decode('utf-8')
+
+                await websocket.send_text(data)
+
+            await asyncio.sleep(0.01)
+
+    except WebSocketDisconnect:
+        logger.info("💻 Frontend disconnected from terminal logs stream.")
+        await pubsub.unsubscribe("terminal_logs")
+
 # --- ROUTER ENDPOINTS ---
 @router.post("/command", response_model=CommandResponse, tags=["Orchestration"])
 async def dispatch_command(payload: CommandRequest):
@@ -550,7 +574,7 @@ async def dispatch_command(payload: CommandRequest):
                     payload.user_id, payload.instruction, "pending"
                 )
 
-        # 2. Save in Qdrant 
+        # 2. Save in Qdrant
         if state.qdrant_client:
             point_id = str(uuid.uuid4())
             state.qdrant_client.upsert(
@@ -633,7 +657,7 @@ async def dispatch_command(payload: CommandRequest):
                 "plan": agent_plan
             }
 
-            # Serialize in JSON and insert in 'robot_tasks_queue' 
+            # Serialize in JSON and insert in 'robot_tasks_queue'
             queue_name = "robot_tasks_queue"
             await state.redis_client.rpush(queue_name, json.dumps(task_payload))
             logger.info(f"Task {point_id} successfully queued in Redis [{queue_name}].")

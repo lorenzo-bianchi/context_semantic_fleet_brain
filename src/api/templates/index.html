@@ -338,6 +338,31 @@
         document.getElementById('instructionInput').addEventListener('keypress', function (e) {
             if (e.key === 'Enter') sendCommand();
         });
+
+        const wsLogsUrl = `${wsProtocol}//${window.location.host}/ws/terminal_logs`;
+        let wsLogs;
+
+        function connectLogsWebSocket() {
+            wsLogs = new WebSocket(wsLogsUrl);
+
+            wsLogs.onopen = function() {
+                logToConsole("📡 Terminal Logs connected.");
+            };
+
+            wsLogs.onmessage = function(event) {
+                logToConsole(`<span style="color: #ffca28;">${event.data}</span>`);
+            };
+
+            wsLogs.onclose = function() {
+                setTimeout(connectLogsWebSocket, 2000);
+            };
+
+            wsLogs.onerror = function(err) {
+                wsLogs.close();
+            };
+        }
+
+        connectLogsWebSocket();
     </script>
 </body>
 </html>

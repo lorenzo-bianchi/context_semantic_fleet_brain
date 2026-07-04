@@ -76,7 +76,6 @@ class RedisBridgeNode(Node):
         self.visual_approach_timeout = self.get_parameter('vision.visual_approach_timeout').value
         self.visual_target_area = self.get_parameter('vision.visual_target_area').value
 
-        # --- LOG PARAMETERS ---
         self.get_logger().info("--- PARAMETERS LOADED ---")
         self.get_logger().info("[CONTROL]")
         self.get_logger().info(f"  - kp_angular: {self.kp_angular}")
@@ -174,6 +173,14 @@ class RedisBridgeNode(Node):
         ]
 
         self.timer = self.create_timer(0.5, self.poll_queue, callback_group=self.control_cb_group)
+
+    def log_to_terminal(self, message):
+        self.get_logger().info(message)
+        if hasattr(self, 'redis_client'):
+            try:
+                self.redis_client.publish("terminal_logs", f"🤖 [FLEET] {message}")
+            except Exception as e:
+                self.get_logger().error(f"Error while sending log to Redis: {e}")
 
     def euler_from_quaternion(self, x, y, z, w):
         t3 = +2.0 * (w * z + x * y)
@@ -278,7 +285,7 @@ class RedisBridgeNode(Node):
         if task_data:
             try:
                 task = json.loads(task_data)
-                self.get_logger().info(f"📦 New Plan Received: Task ID [{task.get('task_id')}]")
+                self.log_to_terminal(f"📦 New Plan Received: Task ID [{task.get('task_id')}]")
                 self.is_executing = True
                 self.execute_plan(task.get('plan', []))
             except json.JSONDecodeError as e:
@@ -292,7 +299,7 @@ class RedisBridgeNode(Node):
             target = step.get('target', 'UNKNOWN')
             explicit_goal = step.get("explicit_goal", None)
 
-            self.get_logger().info(f"   ---> Executing: {action} towards '{target}'")
+            self.log_to_terminal(f"   ---> Executing: {action} towards '{target}'")
 
             if action == "NAVIGATE":
                 self.handle_navigate(target, explicit_goal=explicit_goal)
@@ -302,7 +309,7 @@ class RedisBridgeNode(Node):
                 self.handle_explore()
 
             time.sleep(0.5)
-        self.get_logger().info("✅ Plan fully executed.\n")
+        self.log_to_terminal("✅ Plan fully executed.\n")
 
     def handle_navigate(self, target, explicit_goal=None, is_exploration=False):
         target_yaw = None
@@ -318,7 +325,7 @@ class RedisBridgeNode(Node):
             target_yaw = goal.get("yaw", None)
 
         msg = Twist()
-        self.get_logger().info(f"        🚁 In flight towards {target} ({goal_x:.1f}, {goal_y:.1f}, {goal_z:.1f})...")
+        self.log_to_terminal(f"        🚁 In flight towards {target} ({goal_x:.1f}, {goal_y:.1f}, {goal_z:.1f})...")
 
         while rclpy.ok():
             dx = goal_x - self.current_x
@@ -348,13 +355,13 @@ class RedisBridgeNode(Node):
 
         msg.linear.x = msg.linear.y = msg.linear.z = msg.angular.z = 0.0
         self.cmd_vel_pub.publish(msg)
-        self.get_logger().info(f"        ✅ Target '{target}' reached.")
+        self.log_to_terminal(f"        ✅ Target '{target}' reached.")
 
         if not is_exploration and target.lower() != "coordinates":
             self.handle_visual_approach()
 
     def handle_search(self, target):
-        self.get_logger().info(f"        👁️ [Vision] Scanning 360° for '{target}'...")
+        self.log_to_terminal(f"        👁️ [Vision] Scanning 360° for '{target}'...")
         msg = Twist()
         msg.angular.z = float(self.search_yaw_rate)
         scan_duration = (2.0 * math.pi) / self.search_yaw_rate
@@ -366,24 +373,24 @@ class RedisBridgeNode(Node):
 
         msg.angular.z = 0.0
         self.cmd_vel_pub.publish(msg)
-        self.get_logger().info(f"        ✅ [Vision] Scan completed.")
+        self.log_to_terminal(f"        ✅ [Vision] Scan completed.")
 
     def handle_return_home(self):
-        self.get_logger().info("        🏠 Returning to Home Base (0, 0, 1.5)...")
+        self.log_to_terminal("        🏠 Returning to Home Base (0, 0, 1.5)...")
         self.handle_navigate("Home Base", explicit_goal=(0.0, 0.0, 1.5), is_exploration=True)
-        self.get_logger().info("        ✅ Safely returned home.")
+        self.log_to_terminal("        ✅ Safely returned home.")
 
     def handle_explore(self):
-        self.get_logger().info("        🗺️ Initiating Systematic Exploration...")
+        self.log_to_terminal("        🗺️ Initiating Systematic Exploration...")
         for i, waypoint in enumerate(self.exploration_waypoints):
-            self.get_logger().info(f"        🧭 Moving to waypoint {i+1}/{len(self.exploration_waypoints)}")
+            self.log_to_terminal(f"        🧭 Moving to waypoint {i+1}/{len(self.exploration_waypoints)}")
             self.handle_navigate(f"Waypoint {i+1}", explicit_goal=waypoint, is_exploration=True)
             self.handle_search("environment")
             time.sleep(1.0)
         self.handle_return_home()
 
     def handle_visual_approach(self):
-        self.get_logger().info("        👀 Object in sight! Centering...")
+        self.log_to_terminal("        👀 Object in sight! Centering...")
         msg = Twist()
 
         img_center_x = self.image_width / 2.0
