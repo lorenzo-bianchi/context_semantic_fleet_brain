@@ -26,12 +26,12 @@
             --shadow: 0 4px 12px rgba(0,0,0,0.5);
         }
 
-        body { 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            background-color: var(--bg-color); 
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
             color: var(--text-color);
-            margin: 0; 
-            padding: 20px; 
+            margin: 0;
+            padding: 20px;
             transition: background-color 0.3s, color 0.3s;
         }
 
@@ -53,11 +53,11 @@
             margin: 0 auto;
         }
 
-        .panel { 
-            background-color: var(--container-bg); 
-            padding: 20px; 
-            border-radius: 8px; 
-            box-shadow: var(--shadow); 
+        .panel {
+            background-color: var(--container-bg);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: var(--shadow);
             border: 1px solid var(--border-color);
         }
 
@@ -84,26 +84,26 @@
         .button-group { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px; }
         .input-group { display: flex; gap: 10px; margin-bottom: 15px; }
 
-        input[type="text"], input[type="file"] { 
-            flex: 1; 
-            padding: 10px; 
-            font-size: 14px; 
-            border: 1px solid var(--border-color); 
-            border-radius: 6px; 
+        input[type="text"], input[type="file"] {
+            flex: 1;
+            padding: 10px;
+            font-size: 14px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
             background-color: var(--bg-color);
             color: var(--text-color);
-            outline: none; 
+            outline: none;
         }
 
-        button { 
-            padding: 10px 15px; 
-            font-size: 14px; 
-            border: none; 
-            border-radius: 6px; 
-            cursor: pointer; 
-            transition: opacity 0.2s, transform 0.1s; 
-            color: var(--btn-text); 
-            font-weight: 600; 
+        button {
+            padding: 10px 15px;
+            font-size: 14px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.1s;
+            color: var(--btn-text);
+            font-weight: 600;
             display: flex;
             align-items: center;
             gap: 5px;
@@ -115,17 +115,17 @@
         .btn-secondary { background-color: #607d8b; }
         .btn-danger { background-color: #e53935; }
         .btn-warning { background-color: #ff9800; color: #000; }
-        .btn-gemini { background-color: #8e44ad; } 
+        .btn-gemini { background-color: #8e44ad; }
         .btn-ollama { background-color: #e67e22; }
 
-        .output-area { 
-            background-color: var(--terminal-bg); 
-            color: var(--terminal-text); 
-            padding: 15px; 
-            border-radius: 6px; 
-            height: 400px; 
-            overflow-y: auto; 
-            font-family: 'Courier New', Courier, monospace; 
+        .output-area {
+            background-color: var(--terminal-bg);
+            color: var(--terminal-text);
+            padding: 15px;
+            border-radius: 6px;
+            height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', Courier, monospace;
             font-size: 13px;
             border: 1px solid var(--border-color);
         }
@@ -150,7 +150,7 @@
                 <img id="cameraStream" alt="Waiting for Video Stream..." src="">
                 <span style="display:none;">Stream offline. Check ROS 2 bridge.</span>
             </div>
-            
+
             <h3 style="margin-top: 20px;">🕹️ Mission Control</h3>
             <div class="input-group">
                 <input type="text" id="instructionInput" value="Explore the room" placeholder="Enter AI Command (e.g., Go to the red box)">
@@ -278,7 +278,7 @@
         async function fetchHistory() {
             logToConsole("⏳ Fetching command history...");
             try {
-                const response = await fetch('/api/v1/history'); 
+                const response = await fetch('/api/v1/history');
                 const data = await response.json();
                 logToConsole("📜 Database History:", data);
             } catch (error) {
