@@ -133,9 +133,9 @@ class RedisBridgeNode(Node):
         )
 
         self.odom_sub = self.create_subscription(
-            Odometry, 
-            '/odom', 
-            self.odom_callback, 
+            Odometry,
+            '/odom',
+            self.odom_callback,
             10,
             callback_group=self.odom_cb_group
         )
@@ -228,7 +228,7 @@ class RedisBridgeNode(Node):
 
             # Draw visual feedback
             cv2.rectangle(annotated_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-            cv2.putText(annotated_frame, f"Area: {int(max_area)}px", (x, y - 10), 
+            cv2.putText(annotated_frame, f"Area: {int(max_area)}px", (x, y - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
             cv2.circle(annotated_frame, (int(self.target_cx), int(self.target_cy)), 5, (0, 0, 255), -1)
 
@@ -279,7 +279,7 @@ class RedisBridgeNode(Node):
             try:
                 task = json.loads(task_data)
                 self.get_logger().info(f"📦 New Plan Received: Task ID [{task.get('task_id')}]")
-                self.is_executing = True 
+                self.is_executing = True
                 self.execute_plan(task.get('plan', []))
             except json.JSONDecodeError as e:
                 self.get_logger().error(f"Failed to parse task JSON: {e}")
@@ -301,7 +301,7 @@ class RedisBridgeNode(Node):
             elif action == "EXPLORE":
                 self.handle_explore()
 
-            time.sleep(0.5) 
+            time.sleep(0.5)
         self.get_logger().info("✅ Plan fully executed.\n")
 
     def handle_navigate(self, target, explicit_goal=None, is_exploration=False):
@@ -344,7 +344,7 @@ class RedisBridgeNode(Node):
             msg.angular.z = self.kp_angular * yaw_error
 
             self.cmd_vel_pub.publish(msg)
-            time.sleep(0.05) 
+            time.sleep(0.05)
 
         msg.linear.x = msg.linear.y = msg.linear.z = msg.angular.z = 0.0
         self.cmd_vel_pub.publish(msg)
@@ -357,12 +357,12 @@ class RedisBridgeNode(Node):
         self.get_logger().info(f"        👁️ [Vision] Scanning 360° for '{target}'...")
         msg = Twist()
         msg.angular.z = float(self.search_yaw_rate)
-        scan_duration = (2.0 * math.pi) / self.search_yaw_rate 
+        scan_duration = (2.0 * math.pi) / self.search_yaw_rate
         start_time = time.time()
 
         while rclpy.ok() and (time.time() - start_time) < scan_duration:
             self.cmd_vel_pub.publish(msg)
-            time.sleep(0.05) 
+            time.sleep(0.05)
 
         msg.angular.z = 0.0
         self.cmd_vel_pub.publish(msg)
@@ -409,8 +409,8 @@ class RedisBridgeNode(Node):
             self.cmd_vel_pub.publish(msg)
 
             # Check tolerances
-            if (abs(error_x) < self.tol_visual_xy and 
-                abs(error_y) < self.tol_visual_xy and 
+            if (abs(error_x) < self.tol_visual_xy and
+                abs(error_y) < self.tol_visual_xy and
                 abs(error_area) < self.tol_visual_area):
                 break
 
