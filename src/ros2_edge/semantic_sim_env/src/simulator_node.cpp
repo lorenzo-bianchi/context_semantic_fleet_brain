@@ -1,23 +1,45 @@
 #include "semantic_sim_env/simulator_node.hpp"
 
 SimulatorNode::SimulatorNode() : Node("simulator_node") {
+    // Parameters
     this->declare_parameter<bool>("headless", false);
-    this->get_parameter("headless", is_headless_);
+    this->declare_parameter<int>("image_width", 640);
+    this->declare_parameter<int>("image_height", 480);
+    this->declare_parameter<float>("speed_move", 0.0f);
+    this->declare_parameter<float>("speed_rot", 0.0f);
+    this->declare_parameter<std::string>("world_config_path", "");
 
+    this->get_parameter("headless", is_headless_);
+    this->get_parameter("image_width", image_width_);
+    this->get_parameter("image_height", image_height_);
+    this->get_parameter("speed_move", speed_move_);
+    this->get_parameter("speed_rot", speed_rot_);
+    this->get_parameter("world_config_path", world_config_path_);
+
+    RCLCPP_INFO(this->get_logger(), "--- Simulator Parameters ---");
+    RCLCPP_INFO(this->get_logger(), "World Config Path: %s", world_config_path_.c_str());
+    RCLCPP_INFO(this->get_logger(), "Move Speed: %.2f", speed_move_);
+    RCLCPP_INFO(this->get_logger(), "Rot Speed: %.2f", speed_rot_);
+    RCLCPP_INFO(this->get_logger(), "Headless Mode: %s", is_headless_ ? "true" : "false");
+    RCLCPP_INFO(this->get_logger(), "Resolution: %dx%d", image_width_, image_height_);
+    RCLCPP_INFO(this->get_logger(), "----------------------------");
+
+    load_world(world_config_path_);
+
+    // Publishers
     image_pub_ = image_transport::create_publisher(this, "/camera/image_raw");
     odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("/odom", 10);
 
+    // Subscribers
     vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
         "/cmd_vel", 10, std::bind(&SimulatorNode::cmd_vel_callback, this, std::placeholders::_1));
-
-    load_world("/workspace/worlds/world_config.json");
 
     if (is_headless_) {
         SetConfigFlags(FLAG_WINDOW_HIDDEN);
         RCLCPP_INFO(this->get_logger(), "Starting simulator in HEADLESS mode...");
     }
 
-    InitWindow(640, 480, "Semantic Fleet Brain - Simulator");
+    InitWindow(image_width_, image_height_, "Semantic Fleet Brain - Simulator");
     SetTraceLogLevel(LOG_WARNING);
 
     // Initial camera configurations for external and First-Person View (FPV)
@@ -48,12 +70,12 @@ void SimulatorNode::update() {
     drone_pitch_ += cmd_pitch_rate_ * dt_;
     drone_yaw_   += cmd_yaw_rate_ * dt_;
 
-    float manual_move_speed = 4.0f * dt_;
-    float manual_rot_speed = 1.5f * dt_;
+    float current_move_speed = speed_move_ * dt_;
+    float current_rot_speed = speed_rot_ * dt_;
 
     if (use_fpv_) {
-        if (IsKeyDown(KEY_LEFT)) drone_yaw_ += manual_rot_speed;
-        if (IsKeyDown(KEY_RIGHT)) drone_yaw_ -= manual_rot_speed;
+        if (IsKeyDown(KEY_LEFT)) drone_yaw_ += current_rot_speed;
+        if (IsKeyDown(KEY_RIGHT)) drone_yaw_ -= current_rot_speed;
     }
 
     // Compute rotation matrix based on drone orientation
@@ -73,13 +95,13 @@ void SimulatorNode::update() {
 
     if (use_fpv_) {
         // Manual control override for drone position
-        if (IsKeyDown(KEY_W)) drone_pos_ = Vector3Add(drone_pos_, Vector3Scale(forward, manual_move_speed));
-        if (IsKeyDown(KEY_S)) drone_pos_ = Vector3Subtract(drone_pos_, Vector3Scale(forward, manual_move_speed));
-        if (IsKeyDown(KEY_A)) drone_pos_ = Vector3Add(drone_pos_, Vector3Scale(left, manual_move_speed));
-        if (IsKeyDown(KEY_D)) drone_pos_ = Vector3Subtract(drone_pos_, Vector3Scale(left, manual_move_speed));
+        if (IsKeyDown(KEY_W)) drone_pos_ = Vector3Add(drone_pos_, Vector3Scale(forward, current_move_speed));
+        if (IsKeyDown(KEY_S)) drone_pos_ = Vector3Subtract(drone_pos_, Vector3Scale(forward, current_move_speed));
+        if (IsKeyDown(KEY_A)) drone_pos_ = Vector3Add(drone_pos_, Vector3Scale(left, current_move_speed));
+        if (IsKeyDown(KEY_D)) drone_pos_ = Vector3Subtract(drone_pos_, Vector3Scale(left, current_move_speed));
 
-        if (IsKeyDown(KEY_UP)) drone_pos_.y += manual_move_speed;
-        if (IsKeyDown(KEY_DOWN)) drone_pos_.y -= manual_move_speed;
+        if (IsKeyDown(KEY_UP)) drone_pos_.y += current_move_speed;
+        if (IsKeyDown(KEY_DOWN)) drone_pos_.y -= current_move_speed;
     }
 
     // Follow drone with FPV camera
@@ -185,9 +207,9 @@ void SimulatorNode::draw_scene(bool is_fpv) {
     // Render drone model at current state
     rlPushMatrix();
         rlTranslatef(drone_pos_.x, drone_pos_.y, drone_pos_.z);
-        rlRotatef(drone_yaw_ * RAD2DEG, 0, 1, 0);
+        rlRotatef(  drone_yaw_ * RAD2DEG, 0, 1, 0);
         rlRotatef(drone_pitch_ * RAD2DEG, 0, 0, 1);
-        rlRotatef(drone_roll_ * RAD2DEG, 1, 0, 0);
+        rlRotatef( drone_roll_ * RAD2DEG, 1, 0, 0);
 
         DrawCube(Vector3{0.0f, 0.0f, 0.0f}, 0.15f, 0.04f, 0.15f, GREEN);
         DrawCubeWires(Vector3{0.0f, 0.0f, 0.0f}, 0.15f, 0.04f, 0.15f, BLACK);
@@ -198,19 +220,15 @@ void SimulatorNode::draw_scene(bool is_fpv) {
             DrawCube(Vector3{0.0f, 0.0f, 0.0f}, 0.015f, 0.015f, 0.4f, GRAY);
         rlPopMatrix();
 
-        float arm_d = 0.1414f;
-        float prop_y = 0.03f;
-        float p_rad = 0.08f;
-
-        DrawCylinder(Vector3{arm_d, 0.01f, -arm_d}, 0.015f, 0.015f, 0.03f, 8, BLACK);
-        DrawCylinder(Vector3{arm_d, 0.01f, arm_d}, 0.015f, 0.015f, 0.03f, 8, BLACK);
+        DrawCylinder(Vector3{ arm_d, 0.01f, -arm_d}, 0.015f, 0.015f, 0.03f, 8, BLACK);
+        DrawCylinder(Vector3{ arm_d, 0.01f,  arm_d}, 0.015f, 0.015f, 0.03f, 8, BLACK);
         DrawCylinder(Vector3{-arm_d, 0.01f, -arm_d}, 0.015f, 0.015f, 0.03f, 8, BLACK);
-        DrawCylinder(Vector3{-arm_d, 0.01f, arm_d}, 0.015f, 0.015f, 0.03f, 8, BLACK);
+        DrawCylinder(Vector3{-arm_d, 0.01f,  arm_d}, 0.015f, 0.015f, 0.03f, 8, BLACK);
 
-        DrawCylinder(Vector3{arm_d, prop_y, -arm_d}, p_rad, p_rad, 0.005f, 16, ColorAlpha(RED, 0.7f));
-        DrawCylinder(Vector3{arm_d, prop_y, arm_d}, p_rad, p_rad, 0.005f, 16, ColorAlpha(RED, 0.7f));
+        DrawCylinder(Vector3{ arm_d, prop_y, -arm_d}, p_rad, p_rad, 0.005f, 16, ColorAlpha(RED, 0.7f));
+        DrawCylinder(Vector3{ arm_d, prop_y,  arm_d}, p_rad, p_rad, 0.005f, 16, ColorAlpha(RED, 0.7f));
         DrawCylinder(Vector3{-arm_d, prop_y, -arm_d}, p_rad, p_rad, 0.005f, 16, ColorAlpha(DARKGRAY, 0.7f));
-        DrawCylinder(Vector3{-arm_d, prop_y, arm_d}, p_rad, p_rad, 0.005f, 16, ColorAlpha(DARKGRAY, 0.7f));
+        DrawCylinder(Vector3{-arm_d, prop_y,  arm_d}, p_rad, p_rad, 0.005f, 16, ColorAlpha(DARKGRAY, 0.7f));
 
         DrawCube(Vector3{0.08f, -0.01f, 0.0f}, 0.04f, 0.03f, 0.03f, BLACK);
         DrawSphere(Vector3{0.10f, -0.01f, 0.0f}, 0.012f, BLUE);

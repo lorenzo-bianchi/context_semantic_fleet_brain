@@ -63,8 +63,8 @@ private:
     rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr vel_sub_;
 
     // Simulation state and camera control
+    float dt_;
     Camera3D camera_external_{}, camera_fpv_{};
-    bool use_fpv_ = false;
     float ext_cam_yaw_ = -2.356f, ext_cam_pitch_ = -0.615f;
 
     // Drone kinematics and flight dynamics state
@@ -73,12 +73,23 @@ private:
     float cmd_vel_x_ = 0.0f, cmd_vel_y_ = 0.0f, cmd_vel_z_ = 0.0f;
     float cmd_roll_rate_ = 0.0f, cmd_pitch_rate_ = 0.0f, cmd_yaw_rate_ = 0.0f;
 
-    float dt_;
-    bool is_headless_;
+    // Drone parts
+    float arm_d = 0.1414f;
+    float prop_y = 0.03f;
+    float p_rad = 0.08f;
 
     // World composition data
     std::vector<SimWall> walls_;
     std::vector<SimObject> objects_;
+
+    // Parameters
+    bool is_headless_;
+    bool use_fpv_;
+    std::string world_config_path_;
+    float speed_move_;
+    float speed_rot_;
+    int image_width_;
+    int image_height_;
 };
 
 #endif

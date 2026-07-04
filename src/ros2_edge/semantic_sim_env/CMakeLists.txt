@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.10)
 project(semantic_sim_env)
 
 # Set standard to C++17
-  set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Enable compiler warnings
@@ -56,6 +56,6 @@ target_link_libraries(simulator_node
 # Install executable, headers, and resource files
 install(TARGETS simulator_node DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/ DESTINATION include)
-
+install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 
 ament_package()
