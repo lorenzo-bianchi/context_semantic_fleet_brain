@@ -6,20 +6,24 @@ from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
-    included_launch_file = os.path.join(
+    simulator_launch_file = os.path.join(
         get_package_share_directory('semantic_sim_env'),
         'launch',
         'simulator.launch.py'
     )
 
+    bridge_launch_file = os.path.join(
+        get_package_share_directory('redis_ros_bridge'),
+        'launch',
+        'bridge.launch.py'
+    )
+
     return LaunchDescription([
         IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(included_launch_file)
+            PythonLaunchDescriptionSource(simulator_launch_file)
         ),
 
-        Node(
-            package='redis_ros_bridge',
-            executable='bridge',
-            output='screen',
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(bridge_launch_file)
         )
     ])

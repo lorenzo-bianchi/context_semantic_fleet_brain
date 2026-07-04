@@ -1,0 +1,40 @@
+bridge_node:
+  ros__parameters:
+
+    control:
+      kp_angular: 1.5
+      kp_linear: 0.6
+      kp_z: 0.8
+      kp_visual_yaw: 0.003
+      kp_visual_x: 0.0001
+      kp_visual_z: 0.003
+
+    nav:
+      distance_tolerance: 0.20
+      yaw_tolerance: 0.05
+      search_yaw_rate: 1.0
+
+    vision:
+      capture_cooldown: 2.0
+      min_contour_area: 1000.0
+      tol_visual_area: 2000.0
+      tol_visual_xy: 20.0
+      visual_approach_timeout: 10.0
+      visual_target_area: 25000.0
+      hsv_lower:
+        h: 0
+        s: 100
+        v: 50
+      hsv_upper:
+        h: 179
+        s: 255
+        v: 255
+      jpeg_quality:
+        high: 80
+        low: 50
+
+    redis:
+      host: "localhost"
+      memory_queue: "semantic_memory_queue"
+      port: 6379
+      task_queue: "robot_tasks_queue"
