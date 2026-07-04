@@ -5,19 +5,19 @@ import json
 import os
 
 # --- DARK THEME PALETTE (IDE Style) ---
-BG_MAIN = "#1e1e1e"       
-BG_PANEL = "#252526"      
-BG_INPUT = "#3c3c3c"      
-COLOR_PRIMARY = "#0e639c" 
+BG_MAIN = "#1e1e1e"
+BG_PANEL = "#252526"
+BG_INPUT = "#3c3c3c"
+COLOR_PRIMARY = "#0e639c"
 COLOR_PRIMARY_HOVER = "#1177bb"
-COLOR_DANGER = "#c94a4d"  
-COLOR_WALL = "#666666"    
-COLOR_ERASER = "#333333"  
-TEXT_LIGHT = "#cccccc"    
-TEXT_WHITE = "#ffffff"    
-CANVAS_BG = "#121212"     
-GRID_COLOR = "#2a2a2a"    
-AXIS_COLOR = "#555555"    
+COLOR_DANGER = "#c94a4d"
+COLOR_WALL = "#666666"
+COLOR_ERASER = "#333333"
+TEXT_LIGHT = "#cccccc"
+TEXT_WHITE = "#ffffff"
+CANVAS_BG = "#121212"
+GRID_COLOR = "#2a2a2a"
+AXIS_COLOR = "#555555"
 
 FONT_MAIN = ("Helvetica", 10)
 FONT_TITLE = ("Helvetica", 11, "bold")
