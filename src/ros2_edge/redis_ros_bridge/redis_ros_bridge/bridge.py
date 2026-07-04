@@ -370,7 +370,7 @@ class RedisBridgeNode(Node):
 
     def handle_return_home(self):
         self.get_logger().info("        🏠 Returning to Home Base (0, 0, 1.5)...")
-        self.handle_navigate("Home Base", explicit_goal=(0.0, 0.0, 1.5))
+        self.handle_navigate("Home Base", explicit_goal=(0.0, 0.0, 1.5), is_exploration=True)
         self.get_logger().info("        ✅ Safely returned home.")
 
     def handle_explore(self):
