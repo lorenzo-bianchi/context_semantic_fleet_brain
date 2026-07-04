@@ -1,8 +1,13 @@
 simulator_node:
   ros__parameters:
+    fov: 90.0
     headless: false
     image_width: 640
     image_height: 480
+    init_drone_x: 0.0
+    init_drone_y: 1.0
+    init_drone_z: 0.0
     speed_move: 4.0
     speed_rot: 1.5
     world_config_path: "/workspace/worlds/world_config.json"
+    target_fps: 30

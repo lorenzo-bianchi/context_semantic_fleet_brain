@@ -2,26 +2,38 @@
 
 SimulatorNode::SimulatorNode() : Node("simulator_node") {
     // Parameters
+    this->declare_parameter<float>("fov", 0.0f);
     this->declare_parameter<bool>("headless", false);
-    this->declare_parameter<int>("image_width", 640);
-    this->declare_parameter<int>("image_height", 480);
+    this->declare_parameter<int>("image_height", 0);
+    this->declare_parameter<int>("image_width", 0);
+    this->declare_parameter<float>("init_drone_x", 0.0f);
+    this->declare_parameter<float>("init_drone_y", 0.0f);
+    this->declare_parameter<float>("init_drone_z", 0.0f);
     this->declare_parameter<float>("speed_move", 0.0f);
     this->declare_parameter<float>("speed_rot", 0.0f);
+    this->declare_parameter<int>("target_fps", 0);
     this->declare_parameter<std::string>("world_config_path", "");
 
+    this->get_parameter("fov", fov);
     this->get_parameter("headless", is_headless_);
-    this->get_parameter("image_width", image_width_);
     this->get_parameter("image_height", image_height_);
+    this->get_parameter("image_width", image_width_);
+    this->get_parameter("init_drone_x", init_drone_x);
+    this->get_parameter("init_drone_y", init_drone_y);
+    this->get_parameter("init_drone_z", init_drone_z);
     this->get_parameter("speed_move", speed_move_);
     this->get_parameter("speed_rot", speed_rot_);
+    this->get_parameter("target_fps", target_fps);
     this->get_parameter("world_config_path", world_config_path_);
 
     RCLCPP_INFO(this->get_logger(), "--- Simulator Parameters ---");
-    RCLCPP_INFO(this->get_logger(), "World Config Path: %s", world_config_path_.c_str());
-    RCLCPP_INFO(this->get_logger(), "Move Speed: %.2f", speed_move_);
-    RCLCPP_INFO(this->get_logger(), "Rot Speed: %.2f", speed_rot_);
+    RCLCPP_INFO(this->get_logger(), "Camera FOV: %.1f deg", fov);
+    RCLCPP_INFO(this->get_logger(), "Drone Init Pos: [%.1f, %.1f, %.1f]", init_drone_x, init_drone_y, init_drone_z);
     RCLCPP_INFO(this->get_logger(), "Headless Mode: %s", is_headless_ ? "true" : "false");
-    RCLCPP_INFO(this->get_logger(), "Resolution: %dx%d", image_width_, image_height_);
+    RCLCPP_INFO(this->get_logger(), "Move Speed: %.2f", speed_move_);
+    RCLCPP_INFO(this->get_logger(), "Resolution: %dx%d @ %d FPS", image_width_, image_height_, target_fps);
+    RCLCPP_INFO(this->get_logger(), "Rot Speed: %.2f", speed_rot_);
+    RCLCPP_INFO(this->get_logger(), "World Config Path: %s", world_config_path_.c_str());
     RCLCPP_INFO(this->get_logger(), "----------------------------");
 
     load_world(world_config_path_);

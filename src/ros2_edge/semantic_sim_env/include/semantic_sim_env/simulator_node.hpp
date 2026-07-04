@@ -90,6 +90,9 @@ private:
     float speed_rot_;
     int image_width_;
     int image_height_;
+    int target_fps;
+    float fov;
+    float init_drone_x, init_drone_y, init_drone_z;
 };
 
 #endif
