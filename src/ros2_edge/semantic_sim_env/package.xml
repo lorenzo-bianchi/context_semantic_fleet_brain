@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>semantic_sim_env</name>
-  <version>0.0.1</version>
+  <version>0.1.0</version>
   <description>Lightweight 3D simulator using Raylib and OpenCV</description>
   <maintainer email="lnz.bnc@gmail.com">Lorenzo Bianchi</maintainer>
   <license>Apache-2.0</license>
