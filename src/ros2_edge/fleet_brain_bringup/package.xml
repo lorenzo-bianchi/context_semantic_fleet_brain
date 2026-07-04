@@ -2,10 +2,10 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>fleet_brain_bringup</name>
-  <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="lnz.bnc@gmail.com">zero</maintainer>
-  <license>TODO: License declaration</license>
+  <version>0.0.1</version>
+  <description>Bringup package for the Fleet Brain project </description>
+  <maintainer email="lnz.bnc@gmail.com">Lorenzo Bianchi</maintainer>
+  <license>Apache-2.0</license>
 
   <depend>launch</depend>
   <depend>launch_ros</depend>
