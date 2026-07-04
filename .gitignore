@@ -8,6 +8,7 @@ __pycache__/
 .coverage
 venv/
 env/
+.venv/
 .env
 
 # ==============================
@@ -35,7 +36,11 @@ log/
 **/local_models/
 *.safetensors
 *.bin
-.devcontainer/data/qdrant_storage/
+
+# ==============================
+# Qdrant Storage
+# ==============================
+.devcontainer/data/
 
 # ==============================
 # Extra
