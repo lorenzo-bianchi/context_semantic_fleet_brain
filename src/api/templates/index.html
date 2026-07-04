@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🤖 Fleet Brain - Ground Control Station</title>
     <style>
+        /* CSS Variables for theme management */
         :root {
             --bg-color: #f0f2f5;
             --container-bg: #ffffff;
@@ -59,6 +60,8 @@
             border-radius: 8px;
             box-shadow: var(--shadow);
             border: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
         }
 
         .video-container {
@@ -68,17 +71,28 @@
             border-radius: 6px;
             overflow: hidden;
             display: flex;
-            align-items: center;
             justify-content: center;
+            align-items: center;
+            position: relative;
             color: #666;
-            margin-bottom: 15px;
+            margin-bottom: 0;
             border: 2px solid var(--border-color);
+            flex-grow: 1;
         }
 
         .video-container img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            position: relative;
+            z-index: 1;
+        }
+
+        #streamStatus {
+            position: absolute;
+            z-index: 0;
+            text-align: center;
+            padding: 20px;
         }
 
         .button-group { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px; }
@@ -128,12 +142,13 @@
             font-family: 'Courier New', Courier, monospace;
             font-size: 13px;
             border: 1px solid var(--border-color);
+            flex-grow: 1;
         }
         .log-time { color: #888; margin-right: 8px; }
     </style>
 </head>
-<body>
 
+<body>
     <div class="header-bar">
         <h2>🤖 Fleet Brain GCS</h2>
         <div class="button-group" style="margin: 0;">
@@ -145,35 +160,41 @@
 
     <div class="dashboard-grid">
         <div class="panel">
-            <h3 style="margin-top: 0;">📸 Live FPV Feed</h3>
+            <h3 style="margin-top: 0; margin-bottom: 15px;">📸 Live FPV Feed</h3>
             <div class="video-container">
-                <img id="cameraStream" alt="Waiting for Video Stream..." src="">
-                <span style="display:none;">Stream offline. Check ROS 2 bridge.</span>
-            </div>
-
-            <h3 style="margin-top: 20px;">🕹️ Mission Control</h3>
-            <div class="input-group">
-                <input type="text" id="instructionInput" value="Explore the room" placeholder="Enter AI Command (e.g., Go to the red box)">
-                <button class="btn-primary" onclick="sendCommand()">🚀 Dispatch</button>
+                <span id="streamStatus">Stream offline. Check ROS 2 bridge.</span>
+                <img id="cameraStream" alt="" src="">
             </div>
         </div>
 
-        <div class="panel">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                <h3 style="margin: 0;">🖥️ AI Terminal</h3>
-                <div class="button-group" style="margin: 0;">
-                    <button class="btn-secondary" style="padding: 5px 10px; font-size: 12px;" onclick="fetchHistory()">📜 History</button>
-                    <button class="btn-danger" style="padding: 5px 10px; font-size: 12px;" onclick="clearConsole()">🗑️ Clear</button>
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+            <div class="panel">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h3 style="margin: 0;">🖥️ AI Terminal</h3>
+                    <div class="button-group" style="margin: 0;">
+                        <button class="btn-secondary" style="padding: 5px 10px; font-size: 12px;" onclick="fetchHistory()">📜 History</button>
+                        <button class="btn-danger" style="padding: 5px 10px; font-size: 12px;" onclick="clearConsole()">🗑️ Clear</button>
+                    </div>
+                </div>
+                <div id="outputBox" class="output-area">Initializing connection to Fleet Brain...</div>
+            </div>
+
+            <div class="panel">
+                <h3 style="margin-top: 0; margin-bottom: 15px;">🕹️ Mission Control</h3>
+                <div class="input-group" style="margin-bottom: 0;">
+                    <input type="text" id="instructionInput" value="Explore the room" placeholder="Enter AI Command (e.g., Go to the red box)">
+                    <button class="btn-primary" onclick="sendCommand()">🚀 Dispatch</button>
                 </div>
             </div>
-            <div id="outputBox" class="output-area">Initializing connection to Fleet Brain...</div>
         </div>
     </div>
 
     <script>
         const outputBox = document.getElementById('outputBox');
+        const streamStatus = document.getElementById('streamStatus');
         let currentProvider = "gemini";
 
+        // Restore theme preference from LocalStorage
         if (localStorage.getItem('theme') === 'light') {
             document.documentElement.setAttribute('data-theme', 'light');
         }
@@ -190,11 +211,13 @@
         const wsUrl = `${wsProtocol}//${window.location.host}/ws/video_stream`;
         let ws;
 
+        // WebSocket connection for real-time video feed
         function connectWebSocket() {
             ws = new WebSocket(wsUrl);
 
             ws.onopen = function() {
                 logToConsole("📡 Live video stream connected via WebSocket.");
+                streamStatus.style.display = 'none';
             };
 
             ws.onmessage = function(event) {
@@ -203,6 +226,8 @@
 
             ws.onclose = function() {
                 logToConsole("⚠️ Video stream disconnected. Reconnecting in 2s...");
+                streamStatus.style.display = 'block';
+                imgElement.src = "";
                 setTimeout(connectWebSocket, 2000);
             };
 
@@ -213,6 +238,7 @@
 
         connectWebSocket();
 
+        // Helper to output logs to the UI terminal
         function logToConsole(message, data = null) {
             const now = new Date().toLocaleTimeString();
             let logHtml = `<div style="margin-bottom: 5px;"><span class="log-time">[${now}]</span> ${message}`;
@@ -230,6 +256,7 @@
             outputBox.innerHTML = "Terminal cleared.\n";
         }
 
+        // Toggle between AI providers (Gemini vs Ollama)
         async function toggleLLM() {
             currentProvider = currentProvider === "gemini" ? "ollama" : "gemini";
             const btn = document.getElementById('llmToggleBtn');
@@ -262,6 +289,7 @@
             }
         }
 
+        // Reset memory via backend API
         async function resetMemory() {
             if(!confirm("Are you sure you want to wipe the spatial memory? The drone will forget all objects.")) return;
 
@@ -275,6 +303,7 @@
             }
         }
 
+        // Fetch command execution history
         async function fetchHistory() {
             logToConsole("⏳ Fetching command history...");
             try {
@@ -286,6 +315,7 @@
             }
         }
 
+        // Send user instruction to the robot
         async function sendCommand() {
             const instruction = document.getElementById('instructionInput').value;
             if (!instruction) return;
