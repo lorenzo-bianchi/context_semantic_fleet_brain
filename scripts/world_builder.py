@@ -5,19 +5,19 @@ import json
 import os
 
 # --- DARK THEME PALETTE (IDE Style) ---
-BG_MAIN = "#1e1e1e"       # Main dark background
-BG_PANEL = "#252526"      # Panel and toolbar background
-BG_INPUT = "#3c3c3c"      # Background for inputs
-COLOR_PRIMARY = "#0e639c" # Accent blue (VS Code style)
+BG_MAIN = "#1e1e1e"       
+BG_PANEL = "#252526"      
+BG_INPUT = "#3c3c3c"      
+COLOR_PRIMARY = "#0e639c" 
 COLOR_PRIMARY_HOVER = "#1177bb"
-COLOR_DANGER = "#c94a4d"  # Red for destructive actions
-COLOR_WALL = "#666666"    # Gray for walls
-COLOR_ERASER = "#333333"  # Dark gray for eraser
-TEXT_LIGHT = "#cccccc"    # Standard text
-TEXT_WHITE = "#ffffff"    # Highlighted text
-CANVAS_BG = "#121212"     # Dark grid background
-GRID_COLOR = "#2a2a2a"    # Grid lines
-AXIS_COLOR = "#555555"    # Central axes
+COLOR_DANGER = "#c94a4d"  
+COLOR_WALL = "#666666"    
+COLOR_ERASER = "#333333"  
+TEXT_LIGHT = "#cccccc"    
+TEXT_WHITE = "#ffffff"    
+CANVAS_BG = "#121212"     
+GRID_COLOR = "#2a2a2a"    
+AXIS_COLOR = "#555555"    
 
 FONT_MAIN = ("Helvetica", 10)
 FONT_TITLE = ("Helvetica", 11, "bold")
@@ -31,6 +31,7 @@ class HSVPicker(tk.Toplevel):
         self.width = 360
         self.height = 100
 
+        # Convert initial HEX to HSV for state management
         r = int(initial_color_hex[1:3], 16) / 255.0
         g = int(initial_color_hex[3:5], 16) / 255.0
         b = int(initial_color_hex[5:7], 16) / 255.0
@@ -70,6 +71,7 @@ class HSVPicker(tk.Toplevel):
         btn_confirm.pack(pady=(5, 20))
 
     def draw_hs_gradient(self):
+        # Generate color data for PhotoImage
         rows = []
         for y in range(self.height):
             s = 1.0 - (y / self.height)
@@ -100,6 +102,7 @@ class HSVPicker(tk.Toplevel):
     def update_preview(self):
         r, g, b = colorsys.hsv_to_rgb(self.h, self.s, self.v)
         hex_color = f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}"
+        # Calculate optimal text contrast
         luminance = (0.299*r + 0.587*g + 0.114*b)
         text_color = "black" if luminance > 0.5 else "white"
         self.preview.config(bg=hex_color, fg=text_color)
@@ -128,7 +131,7 @@ class WorldBuilder:
         self.cols = 30
         self.rows = 30
         self.current_tool = "wall"
-        self.world_data = {}  
+        self.world_data = {}  # Stores grid coordinate state: {(row, col): {data}}
         self.selected_color_hex = COLOR_PRIMARY
         self.selected_shape = tk.StringVar(value="cube")
 
@@ -236,6 +239,7 @@ class WorldBuilder:
 
     def on_color_selected(self, hex_color):
         self.selected_color_hex = hex_color
+        # Recalculate button text color for readability
         r, g, b = int(hex_color[1:3],16), int(hex_color[3:5],16), int(hex_color[5:7],16)
         text_color = "black" if (0.299*r + 0.587*g + 0.114*b) > 128 else "white"
         self.color_btn.config(bg=self.selected_color_hex, fg=text_color)
@@ -265,12 +269,14 @@ class WorldBuilder:
             x2 = x1 + self.ui_cell_size
             y2 = y1 + self.ui_cell_size
 
+            # Clear existing cell
             self.canvas.create_rectangle(x1, y1, x2, y2, fill=CANVAS_BG, outline=GRID_COLOR)
             if (row, col) in self.world_data:
                 del self.world_data[(row, col)]
 
             self.draw_grid()
 
+            # Apply tools
             if self.current_tool == "wall":
                 self.world_data[(row, col)] = {"type": "wall", "color": COLOR_WALL}
                 self.canvas.create_rectangle(x1, y1, x2, y2, fill=COLOR_WALL, outline=BG_MAIN)
@@ -300,9 +306,9 @@ class WorldBuilder:
             y = i * self.ui_cell_size
             self.canvas.create_line(0, y, self.cols * self.ui_cell_size, y, fill=GRID_COLOR)
 
+        # Draw coordinate axes (center)
         center_x = (self.cols // 2) * self.ui_cell_size
         center_y = (self.rows // 2) * self.ui_cell_size
-
         self.canvas.create_line(0, center_y, self.cols * self.ui_cell_size, center_y, fill="red", width=3)
         self.canvas.create_line(center_x, 0, center_x, self.rows * self.ui_cell_size, fill="green", width=3)
 
@@ -322,6 +328,7 @@ class WorldBuilder:
         except ValueError: cell_scale = 1.0 
 
         for (row, col), data in self.world_data.items():
+            # Coordinate conversion: map index to world space relative to center
             sim_x = float(col - offset_x) * cell_scale
             sim_y = -float(row - offset_y) * cell_scale
 
@@ -353,7 +360,7 @@ class WorldBuilder:
                 })
                 obj_counter += 1
 
-        output_path = "/workspace/world_config.json"
+        output_path = "/workspace/worlds/world_config.json"
         try:
             with open(output_path, "w") as f:
                 json.dump(output, f, indent=4)

@@ -41,7 +41,7 @@ public:
         vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
             "/cmd_vel", 10, std::bind(&SimulatorNode::cmd_vel_callback, this, std::placeholders::_1));
 
-        load_world("/workspace/world_config.json");
+        load_world("/workspace/worlds/world_config.json");
 
         if (is_headless_) {
             SetConfigFlags(FLAG_WINDOW_HIDDEN);
