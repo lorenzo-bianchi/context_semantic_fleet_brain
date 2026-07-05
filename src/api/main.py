@@ -236,7 +236,7 @@ async def get_agent_plan(instruction: str):
     # --- 1. Object-Based Prompting (The industry standard for LLMs) ---
     prompt = f"""You are the 'Fleet Brain', the AI of a ROS 2 robot.
     Analyze the following command and extract the FULL sequence of operations.
-    Allowed actions: EXPLORE, NAVIGATE, SEARCH.
+    Allowed actions: EXPLORE, NAVIGATE.
 
     Command: "{instruction}"
 
@@ -247,14 +247,6 @@ async def get_agent_plan(instruction: str):
 
     You MUST respond with a JSON object containing a SINGLE key called "plan".
     The value must be the array of all actions required. Do not stop until all steps are extracted.
-
-    Example format:
-    {{
-      "plan": [
-        {{"action": "NAVIGATE", "target": "kitchen"}},
-        {{"action": "SEARCH", "target": "bottle"}},
-      ]
-    }}
 
     EXAMPLES:
     Command: "Go to the red box"
@@ -275,7 +267,6 @@ async def get_agent_plan(instruction: str):
     {{
       "plan": [
         {{"action": "NAVIGATE", "target": "green pyramid"}},
-        {{"action": "SEARCH", "target": "green pyramid"}}
       ]
     }}
 
@@ -283,13 +274,6 @@ async def get_agent_plan(instruction: str):
     {{
       "plan": [
         {{"action": "NAVIGATE", "target": "coordinates", "explicit_goal": [5.0, 2.0, 1.5]}}
-      ]
-    }}
-
-    Command: "Go to the position x=-5, y=0, z=7, yaw=3.14"
-    {{
-      "plan": [
-        {{"action": "NAVIGATE", "target": "coordinates", "explicit_goal": [-5.0, 0.0, 7.0, 3.14]}}
       ]
     }}
 
