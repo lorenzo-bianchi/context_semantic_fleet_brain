@@ -16,7 +16,7 @@ bridge_node:
 
     vision:
       capture_cooldown: 2.0
-      min_contour_area: 1000.0
+      min_contour_area: 5000.0
       tol_visual_area: 2000.0
       tol_visual_xy: 20.0
       visual_approach_timeout: 10.0

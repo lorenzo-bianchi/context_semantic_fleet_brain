@@ -165,11 +165,10 @@ class RedisBridgeNode(Node):
         }
 
         self.exploration_waypoints = [
-            (-4.0,  6.0, 1.5),
-            ( 5.0, -8.0, 1.5),
-            ( 7.0,  4.0, 1.5),
-            (-6.0, -4.0, 1.5),
-            ( 2.0, -1.0, 1.5),
+            (-3.1,  3.2, 1.5,  1.57),
+            ( 5.0,  3.5, 1.0,  0.00),
+            ( 5.9, -5.4, 1.5, -1.57),
+            (-5.1, -6.5, 1.5,  4.71),
         ]
 
         self.timer = self.create_timer(0.5, self.poll_queue, callback_group=self.control_cb_group)
@@ -240,25 +239,24 @@ class RedisBridgeNode(Node):
             cv2.circle(annotated_frame, (int(self.target_cx), int(self.target_cy)), 5, (0, 0, 255), -1)
 
             # Upload detected object data to Redis
-            if self.is_executing:
-                current_time = time.time()
+            current_time = time.time()
 
-                if current_time - self.last_capture_time > self.capture_cooldown:
-                    self.last_capture_time = current_time
-                    self.get_logger().info(f"📸 Object detected! Bounding Box: [x:{x}, y:{y}, w:{w}, h:{h}]. Sending to Redis...")
+            if current_time - self.last_capture_time > self.capture_cooldown:
+                self.last_capture_time = current_time
+                self.get_logger().info(f"📸 Object detected! Bounding Box: [x:{x}, y:{y}, w:{w}, h:{h}]. Sending to Redis...")
 
-                    _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality_high])
-                    b64_image = base64.b64encode(buffer).decode('utf-8')
+                _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality_high])
+                b64_image = base64.b64encode(buffer).decode('utf-8')
 
-                    payload = {
-                        "x": round(self.current_x, 2),
-                        "y": round(self.current_y, 2),
-                        "z": round(self.current_z, 2),
-                        "yaw": round(self.current_yaw, 2),
-                        "image": b64_image,
-                        "timestamp": current_time
-                    }
-                    self.redis_client.rpush(self.memory_queue, json.dumps(payload))
+                payload = {
+                    "x": round(self.current_x, 2),
+                    "y": round(self.current_y, 2),
+                    "z": round(self.current_z, 2),
+                    "yaw": round(self.current_yaw, 2),
+                    "image": b64_image,
+                    "timestamp": current_time
+                }
+                self.redis_client.rpush(self.memory_queue, json.dumps(payload))
         else:
             self.target_cx = None
             self.target_cy = None
@@ -303,8 +301,6 @@ class RedisBridgeNode(Node):
 
             if action == "NAVIGATE":
                 self.handle_navigate(target, explicit_goal=explicit_goal)
-            elif action == "SEARCH":
-                self.handle_search(target)
             elif action == "EXPLORE":
                 self.handle_explore()
 
@@ -386,7 +382,7 @@ class RedisBridgeNode(Node):
             self.log_to_terminal(f"        🧭 Moving to waypoint {i+1}/{len(self.exploration_waypoints)}")
             self.handle_navigate(f"Waypoint {i+1}", explicit_goal=waypoint, is_exploration=True)
             self.handle_search("environment")
-            time.sleep(1.0)
+            time.sleep(0.5)
         self.handle_return_home()
 
     def handle_visual_approach(self):
