@@ -1,4 +1,4 @@
-# Semantic Fleet Brain & Autonomous Drone Simulator
+# Semantic Fleet Brain
 
 An advanced, real-time autonomous robotics framework bridging the gap between high-level human reasoning and low-level robotic control. This project combines **Large Language Models (LLMs)**, **Vision-Language Models (CLIP)**, and **ROS 2** to enable an autonomous drone to explore unknown environments, build a semantic-spatial memory map, and execute complex natural language commands using real-time **Visual Servoing**.
 
