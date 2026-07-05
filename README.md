@@ -22,7 +22,7 @@ An advanced, real-time autonomous robotics framework bridging the gap between hi
 
 The project is highly modular, employing **Redis** as a real-time message broker and queue manager to decouple heavy AI inference (LLM & CLIP) from the high-frequency real-time ROS 2 control loop.
 
-![Semantic Fleet Brain Architecture](images/architecture_diagram.png)
+![Semantic Fleet Brain Architecture](images/architecture_diagram_white.png)
 
 ### 1. The AI brain (`main.py`)
 
