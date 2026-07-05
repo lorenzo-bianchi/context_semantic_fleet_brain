@@ -73,10 +73,8 @@ The project provides a fully pre-configured development environment via **VS Cod
 2. Open the project folder in VS Code.
 3. Press F1 (or Ctrl+Shift+P / Cmd+Shift+P) to open the Command Palette.
 4. Type and select "Dev Containers: Open Folder in Container...".
-5. Select the root folder of the project from the file picker.
-
-VS Code will build the Docker image and start the container automatically.
-3. **Environment:** The `postCreateCommand` in `devcontainer.json` will automatically sync all Python dependencies via `uv`.
+5. Select the root folder of the project. VS Code will automatically build the image, start the container, and use the `postCreateCommand` in `devcontainer.json` to sync all Python dependencies via `uv`.
+6. Copy the environment template (`cp .env.example .env`) and fill the newly created file with your actual credentials. Upon the first launch, the infrastructure services in `compose.yaml` will automatically initialize the databases using these credentials.
 
 ### Infrastructure services
 The `compose.yaml` automatically manages the backend infrastructure:
