@@ -165,7 +165,11 @@ void SimulatorNode::update() {
             DrawText("WASD to Move | ARROWS to Rotate", 10, 35, 10, DARKGRAY);
         }
         DrawText("Press 'C' to toggle camera", 10, 55, 10, DARKGRAY);
-        DrawText(TextFormat("Alt(Z): %.2f | X: %.1f | Y: %.1f | Yaw: %.1f deg", drone_pos_.y, drone_pos_.x, -drone_pos_.z, drone_yaw_ * RAD2DEG), 10, 75, 15, RED);
+
+        float yaw_deg = fmod(drone_yaw_ * RAD2DEG + 180.0f, 360.0f);
+        if (yaw_deg < 0) yaw_deg += 360.0f;
+        yaw_deg -= 180.0f;
+        DrawText(TextFormat("Alt(Z): %.2f | X: %.1f | Y: %.1f | Yaw: %.1f deg", drone_pos_.y, drone_pos_.x, -drone_pos_.z, yaw_deg), 10, 75, 15, RED);
 
     EndDrawing();
 

@@ -2,7 +2,16 @@
 
 An advanced, real-time autonomous robotics framework bridging the gap between high-level human reasoning and low-level robotic control. This project combines **Large Language Models (LLMs)**, **Vision-Language Models (CLIP)**, and **ROS 2** to enable an autonomous drone to explore unknown environments, build a semantic-spatial memory map, and execute complex natural language commands using real-time **Visual Servoing**.
 
-## Key Features
+## System capabilities
+Demonstration of the end-to-end pipeline, from high-level linguistic intent to real-time spatial navigation and visual servoing. The system processes the following command sequence:
+* *Explore the world*
+* *Go to the pyramid*
+* *Reach the red cube*
+* *Go to x=1 y=3 z=3, then to (-4, 0, 0.6)*
+
+<video src="media/mission_demo.mp4" width="100%" autoplay loop muted playsinline></video>
+
+## Key features
 
 * **LLM-powered task planning:** Parses complex, unstructured human instructions (e.g., *"Find where the charger is and go there"*) and decomposes them into a structured JSON execution plan containing actions like `EXPLORE`, `NAVIGATE`, or `SEARCH`.
 
@@ -18,11 +27,11 @@ An advanced, real-time autonomous robotics framework bridging the gap between hi
 
 * **Containerized development environment:** Fully isolated environment via **DevContainers** with NVIDIA GPU support for high-performance AI inference.
 
-## System Architecture
+## System architecture
 
 The project is highly modular, employing **Redis** as a real-time message broker and queue manager to decouple heavy AI inference (LLM & CLIP) from the high-frequency real-time ROS 2 control loop.
 
-![Semantic Fleet Brain Architecture](images/architecture_diagram_white.png)
+![Semantic Fleet Brain Architecture](media/architecture_diagram_white.png)
 
 ### 1. The AI brain (`main.py`)
 
@@ -90,7 +99,7 @@ The `compose.yaml` automatically manages the backend infrastructure:
 * **Computer Vision & Rendering:** Raylib, rlgl, OpenCV, `cv_bridge`, `image_transport`
 * **Web Frontend:** HTML5, CSS Variables, Modern JavaScript (WebSockets)
 
-## Getting Started
+## Getting started
 
 1. **Spin up infrastructure:** Ensure Qdrant (port 6333), Redis (port 6379), and PostgreSQL are running.
 
