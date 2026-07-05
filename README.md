@@ -22,22 +22,7 @@ An advanced, real-time autonomous robotics framework bridging the gap between hi
 
 The project is highly modular, employing **Redis** as a real-time message broker and queue manager to decouple heavy AI inference (LLM & CLIP) from the high-frequency real-time ROS 2 control loop.
 
-```text
-                  +----------------------------------------+
-                  |         Web Dashboard / GCS            |
-                  +-------------------+--------------------+
-                                      | WebSocket (Live Video & Logs)
-                                      v
-+------------------+     +------------+------------+     +--------------------+
-|  LLM Provider    | <-> |    AI Brain (FastAPI)   | <-> | Qdrant (Vector DB) |
-| (Gemini/Ollama)  |     +------------+------------+     +--------------------+
-+------------------+                  | Redis Pub/Sub
-                                      v
-+------------------+     +------------+------------+     +--------------------+
-|  PostgreSQL      | <-> |    ROS 2 Python Bridge  | <-> | Raylib Simulator   |
-| (History Log)    |     |   (redis_bridge_node)   |     |  (simulator_node)  |
-+------------------+     +-------------------------+     +--------------------+
-```
+![Semantic Fleet Brain Architecture](images/architecture_diagram.png)
 
 ### 1. The AI brain (`main.py`)
 
@@ -85,7 +70,12 @@ The project provides a fully pre-configured development environment via **VS Cod
 
 ### Setup
 1. **Prerequisites:** Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) and the "Dev Containers" extension in VS Code.
-2. **Launch:** Open the project folder in VS Code. Click the green "><" icon in the bottom-left corner and select **"Reopen in Container"**.
+2. Open the project folder in VS Code.
+3. Press F1 (or Ctrl+Shift+P / Cmd+Shift+P) to open the Command Palette.
+4. Type and select "Dev Containers: Open Folder in Container...".
+5. Select the root folder of the project from the file picker.
+
+VS Code will build the Docker image and start the container automatically.
 3. **Environment:** The `postCreateCommand` in `devcontainer.json` will automatically sync all Python dependencies via `uv`.
 
 ### Infrastructure services
