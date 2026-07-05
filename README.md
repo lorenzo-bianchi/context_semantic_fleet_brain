@@ -9,7 +9,7 @@ Demonstration of the end-to-end pipeline, from high-level linguistic intent to r
 * *Reach the red cube*
 * *Go to x=1 y=3 z=3, then to (-4, 0, 0.6)*
 
-<video src="media/mission_demo.mp4" width="100%" autoplay loop muted playsinline></video>
+![Demo](media/mission_demo.gif)
 
 ## Key features
 
