@@ -1,27 +1,40 @@
 import asyncio
-import asyncpg
 import base64
-import os, logging, json, uuid
-from contextlib import asynccontextmanager
-from dotenv import load_dotenv
-from PIL import Image
-from io import BytesIO
-import httpx
+import json
+import logging
+import os
 import re
+import uuid
+from contextlib import asynccontextmanager
+from io import BytesIO
+from typing import Any
 
-from fastapi import Request, FastAPI, APIRouter, HTTPException, File, UploadFile, Form, WebSocket, WebSocketDisconnect
+import asyncpg
+import httpx
+import redis.asyncio as aioredis
+import torch
+import torch.nn.functional as F
+from dotenv import load_dotenv
+from fastapi import (
+    APIRouter,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-import redis.asyncio as aioredis
-
-import torch
-import torch.nn.functional as F
-from qdrant_client import QdrantClient, models
-from pydantic import BaseModel, Field
-from transformers import CLIPProcessor, CLIPModel
 from google import genai
 from google.genai import types
+from PIL import Image
+from pydantic import BaseModel, Field
+from qdrant_client import QdrantClient, models
+from transformers import CLIPModel, CLIPProcessor
 
 # Load Jinja templates
 templates = Jinja2Templates(directory="templates")
@@ -33,26 +46,36 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 # --- GLOBAL APP STATE ---
 class AppState:
-    ml_models = {}
-    qdrant_client: QdrantClient = None
-    pg_pool: asyncpg.Pool = None
+    ml_models: dict[str, Any] = {}
+    qdrant_client: Any = None
+    pg_pool: Any = None
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
-    gemini_client = None
-    llm_provider = os.getenv("LLM_PROVIDER", "ollama") # "gemini" or "ollama"
-    ollama_url = "http://localhost:11434/api/generate"
+    gemini_client: Any = None
+    llm_provider: str = os.getenv("LLM_PROVIDER", "ollama")  # "gemini" or "ollama"
+    ollama_url: str = "http://localhost:11434/api/generate"
+    redis_client: Any = None
+    memory_worker_task: Any = None
+
 
 state = AppState()
+
 
 # --- SCHEMAS ---
 class LLMProviderRequest(BaseModel):
     provider: str
 
+
 class CommandRequest(BaseModel):
     """Payload for sending a natural language command."""
+
     user_id: str = Field(..., description="User ID or calling system ID")
-    instruction: str = Field(..., description="Natural language command (e.g., 'Explore the north corridor')")
+    instruction: str = Field(
+        ..., description="Natural language command (e.g., 'Explore the north corridor')"
+    )
+
 
 class CommandResponse(BaseModel):
     status: str
@@ -60,13 +83,16 @@ class CommandResponse(BaseModel):
     message: str
     plan: list = []
 
+
 class SceneRequest(BaseModel):
     image_url: str
     instruction: str
 
+
 class SearchRequest(BaseModel):
     query: str
     limit: int = 3
+
 
 # --- LIFESPAN ---
 @asynccontextmanager
@@ -89,10 +115,7 @@ async def lifespan(app: FastAPI):
         logger.info("🧹 Resetting Qdrant collection 'semantic_memory'...")
         state.qdrant_client.recreate_collection(
             collection_name="semantic_memory",
-            vectors_config=models.VectorParams(
-                size=512,
-                distance=models.Distance.COSINE
-            )
+            vectors_config=models.VectorParams(size=512, distance=models.Distance.COSINE),
         )
         logger.info("Qdrant collection reset successfully.")
     except Exception as e:
@@ -111,10 +134,7 @@ async def lifespan(app: FastAPI):
         if "semantic_memory" not in collection_names:
             state.qdrant_client.create_collection(
                 collection_name="semantic_memory",
-                vectors_config=models.VectorParams(
-                    size=512,
-                    distance=models.Distance.COSINE
-                )
+                vectors_config=models.VectorParams(size=512, distance=models.Distance.COSINE),
             )
             logger.info("Qdrant collection 'semantic_memory' successfully created.")
         else:
@@ -128,10 +148,12 @@ async def lifespan(app: FastAPI):
     local_model_path = os.path.join(os.path.dirname(__file__), "local_models", "clip")
 
     if not os.path.exists(local_model_path):
-        logger.error(f"Local model not found at {local_model_path}. Run 'scripts/download_model.py' first!")
+        logger.error(
+            f"Local model not found at {local_model_path}. Run 'scripts/download_model.py' first!"
+        )
     else:
-        state.ml_models["clip_model"] = CLIPModel.from_pretrained(local_model_path).to(state.device)
-        state.ml_models["clip_processor"] = CLIPProcessor.from_pretrained(local_model_path)
+        state.ml_models["clip_model"] = CLIPModel.from_pretrained(local_model_path).to(state.device)  # type: ignore
+        state.ml_models["clip_processor"] = CLIPProcessor.from_pretrained(local_model_path)  # type: ignore
 
     # 3. PostgreSQL
     logger.info("Connecting to PostgreSQL...")
@@ -160,7 +182,7 @@ async def lifespan(app: FastAPI):
             """)
             logger.info("Database tables verified.")
 
-    except Exception as e:
+    except Exception:
         logger.exception("Database connection failed")
 
     # 4. Redis Connection
@@ -195,7 +217,11 @@ async def lifespan(app: FastAPI):
             logger.warning(f"Error closing Qdrant: {e}")
 
     # Teardown: Close Pool
-    if state.pg_pool and type(state.pg_pool).__name__ != "MockPool" and hasattr(state.pg_pool, "close"):
+    if (
+        state.pg_pool
+        and type(state.pg_pool).__name__ != "MockPool"
+        and hasattr(state.pg_pool, "close")
+    ):
         try:
             await state.pg_pool.close()
         except Exception as e:
@@ -212,12 +238,13 @@ async def lifespan(app: FastAPI):
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
+
 # --- APP SETUP ---
 app = FastAPI(
     title="Semantic Fleet Brain API",
     version="0.1.0",
     description="Agentic Orchestrator for ROS 2 robotic fleets",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # CORS configuration
@@ -230,6 +257,7 @@ app.add_middleware(
 )
 
 router = APIRouter(prefix="/api/v1")
+
 
 # --- UTILS ---
 async def get_agent_plan(instruction: str):
@@ -291,9 +319,9 @@ async def get_agent_plan(instruction: str):
                         "model": "gemma2:9b",
                         "prompt": prompt,
                         "stream": False,
-                        "format": "json"
+                        "format": "json",
                     },
-                    timeout=60.0
+                    timeout=60.0,
                 )
                 response.raise_for_status()
                 raw_json = response.json().get("response", "")
@@ -305,12 +333,13 @@ async def get_agent_plan(instruction: str):
                 return []
     else:
         try:
+            if state.gemini_client is None:
+                raise RuntimeError("Gemini Client not initialized.")
+
             response = state.gemini_client.models.generate_content(
-                model='gemini-2.5-flash',
+                model="gemini-2.5-flash",
                 contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json"
-                )
+                config=types.GenerateContentConfig(response_mime_type="application/json"),
             )
             raw_json = response.text
         except Exception as e:
@@ -337,7 +366,7 @@ async def get_agent_plan(instruction: str):
     except json.JSONDecodeError:
         # Emergency regex fallback
         try:
-            match = re.search(r'\{.*\}', raw_json, re.DOTALL)
+            match = re.search(r"\{.*\}", raw_json, re.DOTALL)
             if match:
                 extracted = json.loads(match.group(0))
                 if "plan" in extracted:
@@ -346,6 +375,7 @@ async def get_agent_plan(instruction: str):
             logger.error(f"RegEx fallback failed. Raw: {raw_json} | Error: {fallback_error}")
 
         return []
+
 
 def get_embedding(text: str):
     """Reliably extract the pure 512-dim text embedding."""
@@ -363,6 +393,7 @@ def get_embedding(text: str):
         pooled_output = outputs.pooler_output
         text_embeds = model.text_projection(pooled_output)
         return F.normalize(text_embeds, p=2, dim=-1).squeeze().tolist()
+
 
 async def semantic_memory_worker():
     """Loops to listen to the Redis queue, vectorizes images, and saves them to Qdrant."""
@@ -428,12 +459,14 @@ async def semantic_memory_worker():
                             "z": z,
                             "yaw": yaw,
                             "image_path": img_path,
-                            "timestamp": timestamp
-                        }
+                            "timestamp": timestamp,
+                        },
                     )
-                ]
+                ],
             )
-            logger.info(f"🌟 New discovery stored! Object vectorized at coordinates: ({x}, {y}, {z})")
+            logger.info(
+                f"🌟 New discovery stored! Object vectorized at coordinates: ({x}, {y}, {z})"
+            )
 
         except asyncio.CancelledError:
             logger.info("Semantic Memory Worker shutting down.")
@@ -442,21 +475,21 @@ async def semantic_memory_worker():
             logger.error(f"Error processing visual memory: {type(e).__name__} - {e}")
             await asyncio.sleep(2)
 
+
 # --- ENDPOINTS ---
 @app.get("/", response_class=HTMLResponse)
 async def frontend(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
+
 
 @app.get("/health", tags=["System"])
 async def health_check():
     """Vital endpoint for Kubernetes Liveness and Readiness probes."""
     return {"status": "ok", "service": "fleet_brain_api"}
 
+
 @app.post("/api/v1/analyze-scene")
-async def analyze_scene(
-    instruction: str = Form(...),
-    image_file: UploadFile = File(...)
-):
+async def analyze_scene(instruction: str = Form(...), image_file: UploadFile = File(...)):
     """Compare a loaded image with an instruction (Multimodal)."""
     model = state.ml_models.get("clip_model")
     processor = state.ml_models.get("clip_processor")
@@ -483,10 +516,11 @@ async def analyze_scene(
             "instruction": instruction,
             "filename": image_file.filename,
             "cosine_similarity_score": round(raw_score, 4),
-            "match_confidence_percent": round(max(0, raw_score) * 100, 2)
+            "match_confidence_percent": round(max(0, raw_score) * 100, 2),
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
 
 @app.websocket("/ws/video_stream")
 async def video_stream(websocket: WebSocket):
@@ -499,10 +533,10 @@ async def video_stream(websocket: WebSocket):
         while True:
             message = await pubsub.get_message(ignore_subscribe_messages=True)
 
-            if message and message['type'] == 'message':
-                data = message['data']
+            if message and message["type"] == "message":
+                data = message["data"]
                 if isinstance(data, bytes):
-                    data = data.decode('utf-8')
+                    data = data.decode("utf-8")
 
                 await websocket.send_text(data)
 
@@ -511,6 +545,7 @@ async def video_stream(websocket: WebSocket):
     except WebSocketDisconnect:
         logger.info("📱 Frontend disconnected from video stream.")
         await pubsub.unsubscribe("live_video_stream")
+
 
 @app.websocket("/ws/terminal_logs")
 async def terminal_logs_stream(websocket: WebSocket):
@@ -523,10 +558,10 @@ async def terminal_logs_stream(websocket: WebSocket):
         while True:
             message = await pubsub.get_message(ignore_subscribe_messages=True)
 
-            if message and message['type'] == 'message':
-                data = message['data']
+            if message and message["type"] == "message":
+                data = message["data"]
                 if isinstance(data, bytes):
-                    data = data.decode('utf-8')
+                    data = data.decode("utf-8")
 
                 await websocket.send_text(data)
 
@@ -535,6 +570,7 @@ async def terminal_logs_stream(websocket: WebSocket):
     except WebSocketDisconnect:
         logger.info("💻 Frontend disconnected from terminal logs stream.")
         await pubsub.unsubscribe("terminal_logs")
+
 
 # --- ROUTER ENDPOINTS ---
 @router.post("/command", response_model=CommandResponse, tags=["Orchestration"])
@@ -556,7 +592,9 @@ async def dispatch_command(payload: CommandRequest):
             async with state.pg_pool.acquire() as conn:
                 pg_id = await conn.fetchval(
                     "INSERT INTO command_history (user_id, instruction, status) VALUES ($1, $2, $3) RETURNING id",
-                    payload.user_id, payload.instruction, "pending"
+                    payload.user_id,
+                    payload.instruction,
+                    "pending",
                 )
 
         # 2. Save in Qdrant
@@ -571,10 +609,10 @@ async def dispatch_command(payload: CommandRequest):
                             "pg_id": int(pg_id) if pg_id is not None else None,
                             "user_id": str(payload.user_id),
                             "instruction": str(payload.instruction),
-                            "status": "pending"
-                        }
+                            "status": "pending",
+                        },
                     )
-                ]
+                ],
             )
             logger.info(f"Command saved in Qdrant with ID: {point_id}")
 
@@ -597,7 +635,9 @@ async def dispatch_command(payload: CommandRequest):
 
                 if action == "NAVIGATE" and target.lower() not in generic_targets:
                     if "explicit_goal" in step:
-                        logger.info(f"⏭️ Skipping semantic search, explicit coordinates provided by AI: {step['explicit_goal']}")
+                        logger.info(
+                            f"⏭️ Skipping semantic search, explicit coordinates provided by AI: {step['explicit_goal']}"
+                        )
                         continue
 
                     logger.info(f"🔍 Spatial resolution for NAVIGATE towards: '{target}'...")
@@ -610,26 +650,35 @@ async def dispatch_command(payload: CommandRequest):
                         query=target_vector,
                         limit=1,
                         query_filter=models.Filter(
-                            must=[models.FieldCondition(key="type", match=models.MatchValue(value="visual_discovery"))]
-                        )
+                            must=[
+                                models.FieldCondition(
+                                    key="type", match=models.MatchValue(value="visual_discovery")
+                                )
+                            ]
+                        ),
                     ).points
 
                     if search_result and search_result[0].score > 0.23:
                         best_match = search_result[0].payload
-                        step["explicit_goal"] = [
-                            best_match["x"],
-                            best_match["y"],
-                            best_match["z"],
-                            best_match.get("yaw", 0.0)
-                        ]
-                        logger.info(f"🎯 Destination found: {step['explicit_goal']}")
+                        if best_match is not None:
+                            step["explicit_goal"] = [
+                                best_match["x"],
+                                best_match["y"],
+                                best_match["z"],
+                                best_match.get("yaw", 0.0),
+                            ]
+                            logger.info(f"🎯 Destination found: {step['explicit_goal']}")
                     else:
-                        logger.info(f"ℹ️ No known coordinates for '{target}'. The drone will proceed with blind/exploratory navigation.")
+                        logger.info(
+                            f"ℹ️ No known coordinates for '{target}'. The drone will proceed with blind/exploratory navigation."
+                        )
 
                 # 2. OTHER ACTIONS
                 # Pass them through as is, without injecting coordinates
                 else:
-                    logger.info(f"⏩ Action '{action}' towards '{target}' ignored by the resolver (does not require fixed coordinates).")
+                    logger.info(
+                        f"⏩ Action '{action}' towards '{target}' ignored by the resolver (does not require fixed coordinates)."
+                    )
 
         # 4. Queing task on Redis (Publisher)
         if agent_plan and state.redis_client:
@@ -638,7 +687,7 @@ async def dispatch_command(payload: CommandRequest):
                 "task_id": point_id,
                 "user_id": payload.user_id,
                 "instruction": payload.instruction,
-                "plan": agent_plan
+                "plan": agent_plan,
             }
 
             # Serialize in JSON and insert in 'robot_tasks_queue'
@@ -655,8 +704,9 @@ async def dispatch_command(payload: CommandRequest):
         status="accepted",
         task_id="task_mock_12345",
         message="Command accepted, analyzed by Agent and sent to ROS 2 Fleet.",
-        plan=agent_plan
+        plan=agent_plan,
     )
+
 
 @router.get("/history", tags=["Orchestration"])
 async def get_command_history(limit: int = 10):
@@ -669,12 +719,13 @@ async def get_command_history(limit: int = 10):
             # Retrieve records in descending order (newest first)
             records = await conn.fetch(
                 "SELECT id, user_id, instruction, status, timestamp FROM command_history ORDER BY timestamp DESC LIMIT $1",
-                limit
+                limit,
             )
             # Convert timestamp to string for JSON serialization
             return [dict(record) for record in records]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/test-embedding", tags=["System Test"])
 async def test_embedding_endpoint(text: str = "Embedding generation test"):
@@ -690,13 +741,14 @@ async def test_embedding_endpoint(text: str = "Embedding generation test"):
             "status": "success",
             "input_text": text,
             "vector_dimension": len(embedding_vector),
-            "vector_preview": embedding_vector[:5]
+            "vector_preview": embedding_vector[:5],
         }
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"Error during embedding generation: {e}")
         raise HTTPException(status_code=500, detail="Internal inference error.")
+
 
 @router.get("/test-db", tags=["System Test"])
 async def test_db():
@@ -707,10 +759,11 @@ async def test_db():
     try:
         # Get a connection from the pool and run a simple query
         async with state.pg_pool.acquire() as conn:
-            version = await conn.fetchval('SELECT version();')
+            version = await conn.fetchval("SELECT version();")
             return {"status": "success", "db_version": version}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/search-memory", tags=["Memory"])
 async def search_memory(payload: SearchRequest):
@@ -722,38 +775,39 @@ async def search_memory(payload: SearchRequest):
         query_vector = get_embedding(payload.query)
 
         search_result = state.qdrant_client.query_points(
-            collection_name="semantic_memory",
-            query=query_vector,
-            limit=payload.limit
+            collection_name="semantic_memory", query=query_vector, limit=payload.limit
         ).points
 
         results = []
         for hit in search_result:
-            results.append({
-                "score": round(hit.score, 4),
-                "instruction": hit.payload.get("instruction"),
-                "user_id": hit.payload.get("user_id"),
-                "pg_id": hit.payload.get("pg_id")
-            })
+            if hit.payload is not None:
+                results.append(
+                    {
+                        "score": round(hit.score, 4),
+                        "instruction": hit.payload.get("instruction"),
+                        "user_id": hit.payload.get("user_id"),
+                        "pg_id": hit.payload.get("pg_id"),
+                    }
+                )
 
-        return {
-            "status": "success",
-            "query": payload.query,
-            "matches": results
-        }
+        return {"status": "success", "query": payload.query, "matches": results}
     except Exception as e:
         logger.error(f"Error during semantic search: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/llm-provider", tags=["System"])
 async def set_llm_provider(payload: LLMProviderRequest):
     """Dynamically switch the LLM provider from the dashboard."""
     if payload.provider not in ["gemini", "ollama"]:
-        raise HTTPException(status_code=400, detail="Invalid provider. Choose 'gemini' or 'ollama'.")
+        raise HTTPException(
+            status_code=400, detail="Invalid provider. Choose 'gemini' or 'ollama'."
+        )
 
     state.llm_provider = payload.provider
     logger.info(f"🔄 LLM Provider switched to: {state.llm_provider}")
 
     return {"status": "success", "active_provider": state.llm_provider}
+
 
 app.include_router(router)

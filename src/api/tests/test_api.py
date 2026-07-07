@@ -1,16 +1,19 @@
-import pytest
+from unittest.mock import AsyncMock, patch
+
 from fastapi.testclient import TestClient
-from unittest.mock import patch, AsyncMock
+
 from main import app, state
 
 # Initialize the TestClient
 client = TestClient(app)
+
 
 def test_health_check():
     """Verify that the FastAPI application mounts correctly."""
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
 
 # Mock the embedding generation to avoid loading the heavy CLIP model during tests
 @patch("main.get_embedding")
@@ -28,19 +31,14 @@ def test_dispatch_command_success(mock_get_agent_plan, mock_get_embedding):
     mock_get_embedding.return_value = [0.1] * 512
 
     # Force a deterministic JSON output from the agent
-    mock_get_agent_plan.return_value = [
-        {"action": "NAVIGATE", "target": "charger_station"}
-    ]
+    mock_get_agent_plan.return_value = [{"action": "NAVIGATE", "target": "charger_station"}]
 
     # Inject an AsyncMock for Redis into the global app state
     # This prevents real network calls to the Redis broker
     state.redis_client = AsyncMock()
 
     # Payload matching the CommandRequest Pydantic model
-    payload = {
-        "user_id": "operator_1",
-        "instruction": "Find where the charger is and go there"
-    }
+    payload = {"user_id": "operator_1", "instruction": "Find where the charger is and go there"}
 
     # 2. ACT: Perform the POST request
     response = client.post("/api/v1/command", json=payload)
