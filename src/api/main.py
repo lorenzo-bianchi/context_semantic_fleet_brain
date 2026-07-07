@@ -549,6 +549,7 @@ async def dispatch_command(payload: CommandRequest):
         # 0. Generate command embedding using GPU
         embedding_vector = get_embedding(payload.instruction)
         pg_id = None
+        point_id = str(uuid.uuid4())
 
         # 1. Save command to Historical Memory (PostgreSQL)
         if state.pg_pool:
@@ -560,7 +561,6 @@ async def dispatch_command(payload: CommandRequest):
 
         # 2. Save in Qdrant
         if state.qdrant_client:
-            point_id = str(uuid.uuid4())
             state.qdrant_client.upsert(
                 collection_name="semantic_memory",
                 points=[
