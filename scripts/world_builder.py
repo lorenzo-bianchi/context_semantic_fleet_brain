@@ -44,7 +44,7 @@ class HSVPicker(tk.Toplevel):
     def setup_ui(self):
         tk.Label(self, text="Hue (X) and Saturation (Y)", font=FONT_TITLE, bg=BG_PANEL, fg=TEXT_WHITE).pack(pady=(15, 5))
 
-        self.canvas = tk.Canvas(self, width=self.width, height=self.height, cursor="crosshair", 
+        self.canvas = tk.Canvas(self, width=self.width, height=self.height, cursor="crosshair",
                                 bg=BG_MAIN, highlightthickness=1, highlightbackground=BG_INPUT)
         self.canvas.pack(padx=20, pady=5)
 
@@ -61,7 +61,7 @@ class HSVPicker(tk.Toplevel):
         v_frame.pack(fill="x", padx=20, pady=15)
         tk.Label(v_frame, text="Value (V): ", font=FONT_MAIN, bg=BG_PANEL, fg=TEXT_LIGHT).pack(side="left")
         self.v_scale = ttk.Scale(v_frame, from_=0.0, to=1.0, orient="horizontal", command=self.on_v_change)
-        self.v_scale.set(self.v) 
+        self.v_scale.set(self.v)
         self.v_scale.pack(side="left", fill="x", expand=True, padx=10)
 
         self.preview.pack(pady=10)
@@ -78,7 +78,7 @@ class HSVPicker(tk.Toplevel):
             row = []
             for x in range(self.width):
                 h = x / self.width
-                r, g, b = colorsys.hsv_to_rgb(h, s, 1.0) 
+                r, g, b = colorsys.hsv_to_rgb(h, s, 1.0)
                 row.append(f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}")
             rows.append("{" + " ".join(row) + "}")
         self.hs_img.put(" ".join(rows))
@@ -127,7 +127,7 @@ class WorldBuilder:
         style.map("TCombobox", fieldbackground=[("readonly", BG_INPUT)])
         style.configure("TSpinbox", fieldbackground=BG_INPUT, background=BG_PANEL, foreground=TEXT_WHITE, bordercolor=BG_PANEL, padding=5)
 
-        self.ui_cell_size = 30 
+        self.ui_cell_size = 30
         self.cols = 30
         self.rows = 30
         self.current_tool = "wall"
@@ -140,7 +140,7 @@ class WorldBuilder:
 
     def create_flat_button(self, parent, text, bg, fg, command, bold=False):
         font = FONT_TITLE if bold else FONT_MAIN
-        btn = tk.Button(parent, text=text, bg=bg, fg=fg, font=font, 
+        btn = tk.Button(parent, text=text, bg=bg, fg=fg, font=font,
                         relief="flat", activebackground=bg, activeforeground=fg, bd=0, padx=10, pady=5, cursor="hand2", command=command)
         return btn
 
@@ -176,7 +176,7 @@ class WorldBuilder:
         self.btn_wall = self.create_flat_button(toolbar, "Draw Wall", COLOR_WALL, "white", lambda: self.select_tool("wall"))
         self.btn_wall.pack(fill="x", pady=2)
 
-        self.btn_eraser = tk.Button(toolbar, text="Eraser", bg=BG_MAIN, fg=TEXT_LIGHT, font=FONT_MAIN, 
+        self.btn_eraser = tk.Button(toolbar, text="Eraser", bg=BG_MAIN, fg=TEXT_LIGHT, font=FONT_MAIN,
                                     relief="solid", bd=1, padx=10, pady=5, cursor="hand2", command=lambda: self.select_tool("eraser"))
         self.btn_eraser.pack(fill="x", pady=5)
 
@@ -218,7 +218,7 @@ class WorldBuilder:
         canvas_width = self.cols * self.ui_cell_size
         canvas_height = self.rows * self.ui_cell_size
 
-        self.canvas = tk.Canvas(self.canvas_frame, width=canvas_width, height=canvas_height, bg=CANVAS_BG, 
+        self.canvas = tk.Canvas(self.canvas_frame, width=canvas_width, height=canvas_height, bg=CANVAS_BG,
                                 highlightthickness=1, highlightbackground=BG_INPUT)
         self.canvas.pack(anchor="center")
 
@@ -252,11 +252,11 @@ class WorldBuilder:
         self.btn_eraser.config(bd=1, bg=BG_MAIN, fg=TEXT_LIGHT)
         self.btn_object.config(bd=0, bg=BG_INPUT, fg=TEXT_WHITE)
 
-        if tool_name == "wall": 
+        if tool_name == "wall":
             self.btn_wall.config(bd=2, bg="#888888")
-        elif tool_name == "eraser": 
+        elif tool_name == "eraser":
             self.btn_eraser.config(bd=2, bg="#555555", fg="white")
-        elif tool_name == "object": 
+        elif tool_name == "object":
             self.btn_object.config(bd=2, bg=COLOR_PRIMARY, fg="white")
 
     def paint(self, event):
@@ -294,7 +294,7 @@ class WorldBuilder:
                 text_color = "black" if (0.299*r + 0.587*g + 0.114*b) > 128 else "white"
                 label = shape[:2].capitalize()
                 self.canvas.create_text(
-                    x1 + self.ui_cell_size//2, y1 + self.ui_cell_size//2, 
+                    x1 + self.ui_cell_size//2, y1 + self.ui_cell_size//2,
                     text=label, fill=text_color, font=("Helvetica", max(8, self.ui_cell_size//3), "bold")
                 )
 
@@ -325,7 +325,7 @@ class WorldBuilder:
         obj_counter = 0
 
         try: cell_scale = float(self.scale_spin.get())
-        except ValueError: cell_scale = 1.0 
+        except ValueError: cell_scale = 1.0
 
         for (row, col), data in self.world_data.items():
             # Coordinate conversion: map index to world space relative to center

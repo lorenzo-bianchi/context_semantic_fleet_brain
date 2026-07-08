@@ -25,8 +25,8 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(RAYLIB REQUIRED raylib)
 
 # Define executable with header and source
-add_executable(simulator_node 
-  src/simulator_node.cpp 
+add_executable(simulator_node
+  src/simulator_node.cpp
   include/semantic_sim_env/simulator_node.hpp
 )
 

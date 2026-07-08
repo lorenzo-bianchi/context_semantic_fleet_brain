@@ -64,7 +64,7 @@ SimulatorNode::SimulatorNode() : Node("simulator_node") {
     camera_fpv_ = camera_external_;
     camera_fpv_.fovy = 90.0f;
 
-    SetTargetFPS(30); 
+    SetTargetFPS(30);
 
     RCLCPP_INFO(this->get_logger(), "Simulator started with full 6DOF support");
 }
@@ -76,7 +76,7 @@ SimulatorNode::~SimulatorNode() {
 void SimulatorNode::update() {
     if (IsKeyPressed(KEY_C)) use_fpv_ = !use_fpv_;
 
-    dt_ = GetFrameTime(); 
+    dt_ = GetFrameTime();
     // Integrate angular rates to update drone attitude
     drone_roll_  += cmd_roll_rate_ * dt_;
     drone_pitch_ += cmd_pitch_rate_ * dt_;
@@ -92,13 +92,13 @@ void SimulatorNode::update() {
 
     // Compute rotation matrix based on drone orientation
     Matrix rot = MatrixIdentity();
-    rot = MatrixMultiply(rot, MatrixRotateX(drone_roll_));   
-    rot = MatrixMultiply(rot, MatrixRotateZ(drone_pitch_));  
-    rot = MatrixMultiply(rot, MatrixRotateY(drone_yaw_));    
+    rot = MatrixMultiply(rot, MatrixRotateX(drone_roll_));
+    rot = MatrixMultiply(rot, MatrixRotateZ(drone_pitch_));
+    rot = MatrixMultiply(rot, MatrixRotateY(drone_yaw_));
 
     Vector3 forward = Vector3Transform(Vector3{1.0f, 0.0f, 0.0f}, rot);
     Vector3 up      = Vector3Transform(Vector3{0.0f, 1.0f, 0.0f}, rot);
-    Vector3 left    = Vector3Transform(Vector3{0.0f, 0.0f, -1.0f}, rot); 
+    Vector3 left    = Vector3Transform(Vector3{0.0f, 0.0f, -1.0f}, rot);
 
     // Update drone world position based on velocities
     drone_pos_ = Vector3Add(drone_pos_, Vector3Scale(forward, cmd_vel_x_ * dt_));
@@ -119,7 +119,7 @@ void SimulatorNode::update() {
     // Follow drone with FPV camera
     camera_fpv_.position = Vector3Add(drone_pos_, Vector3Scale(forward, 0.6f));
     camera_fpv_.target = Vector3Add(camera_fpv_.position, forward);
-    camera_fpv_.up = up; 
+    camera_fpv_.up = up;
 
     if (!use_fpv_) {
         // Free camera control logic
@@ -142,7 +142,7 @@ void SimulatorNode::update() {
     }
 
     BeginDrawing();
-        ClearBackground(Color{240, 240, 240, 255}); 
+        ClearBackground(Color{240, 240, 240, 255});
         BeginMode3D(camera_fpv_);
             draw_scene(true);
         EndMode3D();
@@ -193,8 +193,8 @@ void SimulatorNode::draw_scene(bool is_fpv) {
         draw_axes();
     }
 
-    DrawPlane(Vector3{0.0f, -0.01f, 0.0f}, Vector2{50.0f, 50.0f}, Color{160, 160, 160, 255}); 
-    DrawGrid(50, 1.0f); 
+    DrawPlane(Vector3{0.0f, -0.01f, 0.0f}, Vector2{50.0f, 50.0f}, Color{160, 160, 160, 255});
+    DrawGrid(50, 1.0f);
 
     for (const auto& wall : walls_) {
         DrawCube(wall.position, wall.size.x, wall.size.y, wall.size.z, wall.color);
@@ -286,8 +286,8 @@ void SimulatorNode::load_world(const std::string& filepath) {
             wall.size = Vector3{w["width"].get<float>(), forced_height, w["depth"].get<float>()};
 
             wall.position = Vector3{
-                w["x"].get<float>(), 
-                center_y, 
+                w["x"].get<float>(),
+                center_y,
                 -w["y"].get<float>()
             };
 
@@ -304,8 +304,8 @@ void SimulatorNode::load_world(const std::string& filepath) {
             obj.size = o["size"];
 
             obj.position = Vector3{
-                o["x"].get<float>(), 
-                o["z"].get<float>(), 
+                o["x"].get<float>(),
+                o["z"].get<float>(),
                 -o["y"].get<float>()
             };
 
@@ -342,7 +342,7 @@ void SimulatorNode::publish_image() {
     auto msg = cv_bridge::CvImage(header, "bgr8", mat_bgr).toImageMsg();
     image_pub_.publish(*msg);
 
-    UnloadImage(img); 
+    UnloadImage(img);
 }
 
 void SimulatorNode::publish_telemetry() {
@@ -352,7 +352,7 @@ void SimulatorNode::publish_telemetry() {
     odom_msg.child_frame_id = "base_link";
 
     odom_msg.pose.pose.position.x = drone_pos_.x;
-    odom_msg.pose.pose.position.y = -drone_pos_.z; 
+    odom_msg.pose.pose.position.y = -drone_pos_.z;
     odom_msg.pose.pose.position.z = drone_pos_.y;
 
     // Convert Euler angles to quaternion
