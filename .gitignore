@@ -41,6 +41,7 @@ log/
 # Qdrant Storage
 # ==============================
 .devcontainer/data/
+qdrant_storage/
 
 # ==============================
 # Extra
