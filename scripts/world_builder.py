@@ -364,6 +364,7 @@ class WorldBuilder:
         try:
             with open(output_path, "w") as f:
                 json.dump(output, f, indent=4)
+                f.write("\n")
             print(f"World exported to {output_path} (Scale: {cell_scale} m/cell)!")
         except Exception as e:
             print(f"Error during save: {e}")
