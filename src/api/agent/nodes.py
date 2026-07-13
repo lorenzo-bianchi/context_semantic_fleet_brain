@@ -69,9 +69,26 @@ async def node_planner(state: AgentState) -> dict:
     Semantic Memory Context (Known objects): {context_str}
 
     CRITICAL RULES:
-    1. If the user asks to "explore", "map", or "scan" the area, you MUST output a single EXPLORE action. Do NOT use NAVIGATE for general exploration.
-    2. If the user wants to go to an object and that object is listed in the Semantic Memory Context, you MUST include an "explicit_goal" array [x, y, z, yaw] and set "target" to "coordinates".
-    3. If the user wants to go to an object but it is NOT in the Semantic Memory Context, output an EXPLORE action to find it.
+    1. If the user asks to "explore", "map", or "scan", output a single EXPLORE action.
+    2. NAVIGATE ACTION: Use this ONLY if the requested object is explicitly listed in the Semantic Memory Context. You MUST include the "explicit_goal" array [x, y, z, yaw] AND the "point_id" string extracted from the context. Set "target" to the natural language name of the object.
+    3. MISSING OBJECTS: If the user wants to go to an object but it is NOT in the Context (or the Context says "No known objects in memory."), you CANNOT use NAVIGATE. You MUST output an EXPLORE action to find it.
+
+    EXAMPLES:
+    Command: "Go to the red cube"
+    Context: [{{"id": "...", "x": 2.0, "y": 1.0, "z": 0.5, "yaw": 0.0}}]
+    {{
+      "plan": [
+        {{"action": "NAVIGATE", "target": "red cube", "explicit_goal": [2.0, 1.0, 0.5, 0.0]}}
+      ]
+    }}
+
+    Command: "Reach the blue sphere"
+    Context: No known objects in memory.
+    {{
+      "plan": [
+        {{"action": "EXPLORE", "target": "environment"}}
+      ]
+    }}
     """
 
     try:
@@ -114,9 +131,8 @@ async def node_planner(state: AgentState) -> dict:
 
 
 async def node_format_dispatcher(state: AgentState) -> dict:
-    plan = state.final_plan or {}
+    if not state.final_plan:
+        fallback = PlanStep(action="EXPLORE", target="environment")
+        return {"final_plan": [fallback]}
 
-    if "action" not in plan:
-        plan["action"] = "EXPLORE"
-
-    return {"final_plan": plan}
+    return {"final_plan": state.final_plan}

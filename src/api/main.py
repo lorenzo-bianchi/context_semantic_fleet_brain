@@ -3,14 +3,12 @@ import base64
 import json
 import logging
 import os
-import re
 import uuid
 from contextlib import asynccontextmanager
 from io import BytesIO
 from typing import Any
 
 import asyncpg
-import httpx
 import redis.asyncio as aioredis
 import torch
 import torch.nn.functional as F
@@ -30,11 +28,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from google import genai
-from google.genai import types
 from PIL import Image
 from pydantic import BaseModel, Field
 from qdrant_client import QdrantClient, models
 from transformers import CLIPModel, CLIPProcessor
+
+from agent.builder import build_agent_graph
+
+# Initialize graph
+agent_app = build_agent_graph()
 
 # Load Jinja templates
 templates = Jinja2Templates(directory="templates")
@@ -58,6 +60,7 @@ class AppState:
     ollama_url: str = "http://localhost:11434/api/generate"
     redis_client: Any = None
     memory_worker_task: Any = None
+    feedback_worker_task: asyncio.Task | None = None
 
 
 state = AppState()
@@ -201,6 +204,7 @@ async def lifespan(app: FastAPI):
 
     # 5. Start Background Workers
     state.memory_worker_task = asyncio.create_task(semantic_memory_worker())
+    state.feedback_worker_task = asyncio.create_task(task_feedback_worker())
 
     yield
 
@@ -208,6 +212,9 @@ async def lifespan(app: FastAPI):
 
     if hasattr(state, "memory_worker_task"):
         state.memory_worker_task.cancel()
+
+    if hasattr(state, "feedback_worker_task"):
+        state.feedback_worker_task.cancel()
 
     # Teardown: Close Qdrant
     if state.qdrant_client and hasattr(state.qdrant_client, "close"):
@@ -260,123 +267,6 @@ router = APIRouter(prefix="/api/v1")
 
 
 # --- UTILS ---
-async def get_agent_plan(instruction: str):
-    # --- 1. Object-Based Prompting (The industry standard for LLMs) ---
-    prompt = f"""You are the 'Fleet Brain', the AI of a ROS 2 robot.
-    Analyze the following command and extract the FULL sequence of operations.
-    Allowed actions: EXPLORE, NAVIGATE.
-
-    Command: "{instruction}"
-
-    CRITICAL RULES:
-    1. If the user asks to "explore", "map", or "scan" the area, you MUST output a single EXPLORE action. Do NOT use NAVIGATE for general exploration.
-    2. NAVIGATE is strictly for going to a specific known object or room.
-    3. If the user asks to go to specific explicit coordinates (x, y, z, and optionally yaw), you MUST include an "explicit_goal" array with the numbers, and set "target" to "coordinates". If yaw is provided, the array must have 4 elements: [x, y, z, yaw].
-
-    You MUST respond with a JSON object containing a SINGLE key called "plan".
-    The value must be the array of all actions required. Do not stop until all steps are extracted.
-
-    EXAMPLES:
-    Command: "Go to the red box"
-    {{
-      "plan": [
-        {{"action": "NAVIGATE", "target": "red box"}}
-      ]
-    }}
-
-    Command: "Explore the room"
-    {{
-      "plan": [
-        {{"action": "EXPLORE", "target": "room"}}
-      ]
-    }}
-
-    Command: "Find the green pyramid"
-    {{
-      "plan": [
-        {{"action": "NAVIGATE", "target": "green pyramid"}},
-      ]
-    }}
-
-    Command: "Go to coordinates x 5, y 2, z 1.5"
-    {{
-      "plan": [
-        {{"action": "NAVIGATE", "target": "coordinates", "explicit_goal": [5.0, 2.0, 1.5]}}
-      ]
-    }}
-
-    Output strictly the JSON object. No other text."""
-
-    raw_json = ""
-
-    # --- 2. API Calls ---
-    if state.llm_provider == "ollama":
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.post(
-                    state.ollama_url,
-                    json={
-                        "model": "gemma2:9b",
-                        "prompt": prompt,
-                        "stream": False,
-                        "format": "json",
-                    },
-                    timeout=60.0,
-                )
-                response.raise_for_status()
-                raw_json = response.json().get("response", "")
-            except httpx.ReadTimeout:
-                logger.error("Ollama timeout: Model is loading or GPU is busy.")
-                return []
-            except Exception as e:
-                logger.error(f"Ollama connection error: {e}")
-                return []
-    else:
-        try:
-            if state.gemini_client is None:
-                raise RuntimeError("Gemini Client not initialized.")
-
-            response = state.gemini_client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(response_mime_type="application/json"),
-            )
-            raw_json = response.text
-        except Exception as e:
-            logger.error(f"Gemini API error: {e}")
-            return []
-
-    # --- 3. Simplified and Bulletproof Parsing ---
-    try:
-        cleaned_raw = raw_json.strip().removeprefix("```json").removesuffix("```").strip()
-        parsed_data = json.loads(cleaned_raw)
-
-        # Since we explicitly asked for {"plan": [...]}, the extraction is deterministic
-        if isinstance(parsed_data, dict) and "plan" in parsed_data:
-            if isinstance(parsed_data["plan"], list):
-                return parsed_data["plan"]
-
-        # Fallback if the LLM provided a top-level array despite the prompt
-        if isinstance(parsed_data, list):
-            return parsed_data
-
-        logger.error(f"JSON parsed but missing 'plan' array: {parsed_data}")
-        return []
-
-    except json.JSONDecodeError:
-        # Emergency regex fallback
-        try:
-            match = re.search(r"\{.*\}", raw_json, re.DOTALL)
-            if match:
-                extracted = json.loads(match.group(0))
-                if "plan" in extracted:
-                    return extracted["plan"]
-        except Exception as fallback_error:
-            logger.error(f"RegEx fallback failed. Raw: {raw_json} | Error: {fallback_error}")
-
-        return []
-
-
 def get_embedding(text: str):
     """Reliably extract the pure 512-dim text embedding."""
     model = state.ml_models.get("clip_model")
@@ -473,6 +363,57 @@ async def semantic_memory_worker():
             break
         except Exception as e:
             logger.error(f"Error processing visual memory: {type(e).__name__} - {e}")
+            await asyncio.sleep(2)
+
+
+async def task_feedback_worker():
+    """Listens for drone failures and replans the graph, discarding incorrect points."""
+    logger.info("🔄 Task Feedback Worker started in background.")
+    from agent.builder import build_agent_graph
+
+    feedback_agent = build_agent_graph()
+
+    while True:
+        try:
+            result = await state.redis_client.blpop("task_feedback_queue", timeout=1)
+            if not result:
+                continue
+
+            _, data_str = result
+            feedback = json.loads(data_str)
+            failed_point_id = feedback["failed_point_id"]
+            instruction = feedback["instruction"]
+            user_id = feedback["user_id"]
+
+            logger.info(f"⚠️ Drone reported failure at point {failed_point_id}. Re-planning...")
+
+            # Re-run the graph adding the failed point to the blacklist
+            initial_state = {
+                "instruction": instruction,
+                "inspected_point_ids": [failed_point_id],
+                "current_telemetry": {"x": 0.0, "y": 0.0, "z": 0.0, "yaw": 0.0},
+            }
+
+            final_state = await feedback_agent.ainvoke(initial_state)
+
+            ros2_plan = [
+                step.model_dump(exclude_none=True) for step in final_state.get("final_plan", [])
+            ]
+
+            task_payload = {
+                "task_id": str(uuid.uuid4()),
+                "user_id": user_id,
+                "instruction": instruction,
+                "plan": ros2_plan,
+            }
+
+            await state.redis_client.rpush("robot_tasks_queue", json.dumps(task_payload))
+            logger.info("🚀 New fallback plan queued!")
+
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Error in feedback worker: {e}")
             await asyncio.sleep(2)
 
 
@@ -577,120 +518,49 @@ async def terminal_logs_stream(websocket: WebSocket):
 async def dispatch_command(payload: CommandRequest):
     """
     Receives a text command, saves it to the PostgreSQL history,
-    and stores its vector embedding in Qdrant for semantic search.
+    and passes it to the LangGraph agent for semantic and spatial reasoning.
     """
     logger.info(f"Received command from {payload.user_id}: {payload.instruction}")
 
     try:
-        # 0. Generate command embedding using GPU
-        embedding_vector = get_embedding(payload.instruction)
-        pg_id = None
+        # 1. Save command to Historical Memory (PostgreSQL)
         point_id = str(uuid.uuid4())
 
-        # 1. Save command to Historical Memory (PostgreSQL)
         if state.pg_pool:
             async with state.pg_pool.acquire() as conn:
-                pg_id = await conn.fetchval(
-                    "INSERT INTO command_history (user_id, instruction, status) VALUES ($1, $2, $3) RETURNING id",
+                await conn.execute(
+                    "INSERT INTO command_history (user_id, instruction, status) VALUES ($1, $2, $3)",
                     payload.user_id,
                     payload.instruction,
                     "pending",
                 )
 
-        # 2. Save in Qdrant
-        if state.qdrant_client:
-            state.qdrant_client.upsert(
-                collection_name="semantic_memory",
-                points=[
-                    models.PointStruct(
-                        id=point_id,
-                        vector=embedding_vector,
-                        payload={
-                            "pg_id": int(pg_id) if pg_id is not None else None,
-                            "user_id": str(payload.user_id),
-                            "instruction": str(payload.instruction),
-                            "status": "pending",
-                        },
-                    )
-                ],
-            )
-            logger.info(f"Command saved in Qdrant with ID: {point_id}")
+        # 2. Initialize the Agent's state
+        logger.info("🧠 Passing control to LangGraph Agent...")
+        initial_state = {
+            "instruction": payload.instruction,
+            # Placeholder for future integration of real-time telemetry from Redis
+            "current_telemetry": {"x": 0.0, "y": 0.0, "z": 0.0, "yaw": 0.0},
+        }
 
-        # 3. Agent Reasoning (Switchable)
-        agent_plan = []
-        try:
-            agent_plan = await get_agent_plan(payload.instruction)
-            logger.info(f"Agent plan generated via {state.llm_provider}: {agent_plan}")
-        except Exception as llm_err:
-            logger.error(f"Error during reasoning: {llm_err}")
+        # 3. Execute the Graph (LangGraph handles Qdrant, LLM, and Routing)
+        final_state = await agent_app.ainvoke(initial_state)
 
-        if agent_plan and state.qdrant_client:
-            for step in agent_plan:
-                action = step.get("action")
-                target = step.get("target", "")
+        # 4. Extract the final plan (guaranteed to be a list of PlanStep Pydantic models)
+        plan_steps = final_state.get("final_plan", [])
 
-                # 1. RESOLUTION ONLY FOR NAVIGATE (if it has a specific target)
-                # Exclude generic targets or pure exploratory movement commands
-                generic_targets = ["unoccupied space", "room boundaries", "environment", "area"]
+        # Convert Pydantic models to standard dictionaries, omitting null fields (like explicit_goal)
+        ros2_plan = [step.model_dump(exclude_none=True) for step in plan_steps]
 
-                if action == "NAVIGATE" and target.lower() not in generic_targets:
-                    if "explicit_goal" in step:
-                        logger.info(
-                            f"⏭️ Skipping semantic search, explicit coordinates provided by AI: {step['explicit_goal']}"
-                        )
-                        continue
-
-                    logger.info(f"🔍 Spatial resolution for NAVIGATE towards: '{target}'...")
-
-                    target_vector = get_embedding(target)
-
-                    # Filter ONLY visual discoveries, ignoring past commands
-                    search_result = state.qdrant_client.query_points(
-                        collection_name="semantic_memory",
-                        query=target_vector,
-                        limit=1,
-                        query_filter=models.Filter(
-                            must=[
-                                models.FieldCondition(
-                                    key="type", match=models.MatchValue(value="visual_discovery")
-                                )
-                            ]
-                        ),
-                    ).points
-
-                    if search_result and search_result[0].score > 0.23:
-                        best_match = search_result[0].payload
-                        if best_match is not None:
-                            step["explicit_goal"] = [
-                                best_match["x"],
-                                best_match["y"],
-                                best_match["z"],
-                                best_match.get("yaw", 0.0),
-                            ]
-                            logger.info(f"🎯 Destination found: {step['explicit_goal']}")
-                    else:
-                        logger.info(
-                            f"ℹ️ No known coordinates for '{target}'. The drone will proceed with blind/exploratory navigation."
-                        )
-
-                # 2. OTHER ACTIONS
-                # Pass them through as is, without injecting coordinates
-                else:
-                    logger.info(
-                        f"⏩ Action '{action}' towards '{target}' ignored by the resolver (does not require fixed coordinates)."
-                    )
-
-        # 4. Queing task on Redis (Publisher)
-        if agent_plan and state.redis_client:
-            # Create a complete payload to send to the ROS 2 node
+        # 5. Queue task on Redis (Publisher) for the ROS 2 bridge
+        if ros2_plan and state.redis_client:
             task_payload = {
                 "task_id": point_id,
                 "user_id": payload.user_id,
                 "instruction": payload.instruction,
-                "plan": agent_plan,
+                "plan": ros2_plan,
             }
 
-            # Serialize in JSON and insert in 'robot_tasks_queue'
             queue_name = "robot_tasks_queue"
             await state.redis_client.rpush(queue_name, json.dumps(task_payload))
             logger.info(f"Task {point_id} successfully queued in Redis [{queue_name}].")
@@ -702,9 +572,9 @@ async def dispatch_command(payload: CommandRequest):
 
     return CommandResponse(
         status="accepted",
-        task_id="task_mock_12345",
+        task_id=point_id,
         message="Command accepted, analyzed by Agent and sent to ROS 2 Fleet.",
-        plan=agent_plan,
+        plan=ros2_plan,
     )
 
 

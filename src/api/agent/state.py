@@ -7,6 +7,9 @@ class PlanStep(BaseModel):
     action: str = Field(description="The action to perform: EXPLORE or NAVIGATE")
     target: str = Field(description="The semantic target or 'coordinates'")
     explicit_goal: list[float] | None = Field(default=None, description="Optional [x, y, z, yaw]")
+    point_id: str | None = Field(
+        default=None, description="The Qdrant ID if the object is from memory"
+    )
 
 
 class AgentPlan(BaseModel):
@@ -30,6 +33,6 @@ class AgentState(BaseModel):
     error_log: list[str] = Field(
         default_factory=list, description="Internal log to handle fallbacks and failures"
     )
-    final_plan: dict[str, Any] | None = Field(
-        default=None, description="Final JSON payload for the ROS 2 bridge"
+    final_plan: list[PlanStep] = Field(
+        default_factory=list, description="Final list of actions for the ROS 2 bridge"
     )

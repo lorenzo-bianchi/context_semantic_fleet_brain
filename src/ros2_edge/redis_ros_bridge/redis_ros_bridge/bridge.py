@@ -283,6 +283,7 @@ class RedisBridgeNode(Node):
         if task_data:
             try:
                 task = json.loads(task_data)
+                self.current_task = task
                 self.log_to_terminal(f"📦 New Plan Received: Task ID [{task.get('task_id')}]")
                 self.is_executing = True
                 self.execute_plan(task.get('plan', []))
@@ -296,18 +297,21 @@ class RedisBridgeNode(Node):
             action = step.get('action', 'UNKNOWN')
             target = step.get('target', 'UNKNOWN')
             explicit_goal = step.get("explicit_goal", None)
+            point_id = step.get("point_id", None)
 
             self.log_to_terminal(f"   ---> Executing: {action} towards '{target}'")
 
             if action == "NAVIGATE":
-                self.handle_navigate(target, explicit_goal=explicit_goal)
+                success = self.handle_navigate(target, explicit_goal=explicit_goal, point_id=point_id)
+                if not success:
+                    break
             elif action == "EXPLORE":
                 self.handle_explore()
 
             time.sleep(0.5)
         self.log_to_terminal("✅ Plan fully executed.\n")
 
-    def handle_navigate(self, target, explicit_goal=None, is_exploration=False):
+    def handle_navigate(self, target, explicit_goal=None, point_id=None, is_exploration=False):
         target_yaw = None
 
         if explicit_goal:
@@ -351,10 +355,26 @@ class RedisBridgeNode(Node):
 
         msg.linear.x = msg.linear.y = msg.linear.z = msg.angular.z = 0.0
         self.cmd_vel_pub.publish(msg)
-        self.log_to_terminal(f"        ✅ Target '{target}' reached.")
+
+        self.log_to_terminal(f"        ✅ Target area reached.")
 
         if not is_exploration and target.lower() != "coordinates":
-            self.handle_visual_approach()
+            success = self.handle_visual_approach()
+            if not success:
+                self.log_to_terminal(f"        ⚠️ Tracking failed! Object lost or false positive.")
+                if point_id and hasattr(self, 'current_task'):
+                    self.log_to_terminal(f"        🔄 Requesting fallback plan to Fleet Brain...")
+                    feedback = {
+                        "failed_point_id": point_id,
+                        "instruction": self.current_task.get("instruction"),
+                        "user_id": self.current_task.get("user_id")
+                    }
+                    self.redis_client.rpush("task_feedback_queue", json.dumps(feedback))
+                return False
+            else:
+                self.log_to_terminal(f"        ✅ Object successfully tracked and centered.")
+        return True
+
 
     def handle_search(self, target):
         self.log_to_terminal(f"        👁️ [Vision] Scanning 360° for '{target}'...")
@@ -393,6 +413,7 @@ class RedisBridgeNode(Node):
         img_center_y = self.image_height / 2.0
 
         start_time = time.time()
+        success = False
 
         while rclpy.ok() and (time.time() - start_time) < self.visual_approach_timeout:
             if self.target_cx is None:
@@ -415,12 +436,15 @@ class RedisBridgeNode(Node):
             if (abs(error_x) < self.tol_visual_xy and
                 abs(error_y) < self.tol_visual_xy and
                 abs(error_area) < self.tol_visual_area):
+                success = True
                 break
 
             time.sleep(0.05)
 
         msg.linear.x = msg.linear.y = msg.linear.z = msg.angular.z = 0.0
         self.cmd_vel_pub.publish(msg)
+
+        return success
 
 def main(args=None):
     rclpy.init(args=args)
